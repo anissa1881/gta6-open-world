@@ -2,6 +2,10 @@
 [![rank](https://make.fun/badge/gta6-01/anissa1881/gta6-open-world/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/anissa1881/gta6-open-world/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
+The three badges above are live make.fun badges for this entry: the competition
+badge, this repository's live rank, and its live reward. See the bounty page at
+https://make.fun/bounty/gta6-01 for the competition rules and leaderboard.
+
 # Sunport City — Make GTA 6 (gta6-01)
 
 An original 2D top-down open-world crime game in the spirit of GTA 6, built for the

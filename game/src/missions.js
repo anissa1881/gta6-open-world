@@ -15,8 +15,43 @@ export const SIDE_SPOTS = [
   { kind: 'vigilante', x: 1600, y: 1000, label: 'Vigilante Call — Sunport Strip' },
 ];
 
+/** The Strip Sprint route: five checkpoints east along the Strip's y=1400 road. */
+export const RACE_CHECKPOINTS = [
+  { x: 400, y: 1400 },
+  { x: 700, y: 1400 },
+  { x: 1000, y: 1400 },
+  { x: 1300, y: 1400 },
+  { x: 1550, y: 1400 },
+];
+
+/** The gold coupe for Harbor Heist, parked at Marina Row. */
+const HEIST_SPOT = { x: 2630, y: 230, angle: 0 };
+
 function setToast(state, text) {
   state.toast = { text, timer: 4 };
+}
+
+/** Park the gold coupe at Marina Row (removing any earlier one first). */
+function spawnHeistCar(state) {
+  state.cars = state.cars.filter((c) => !c.isHeist);
+  const car = createCar('parked', HEIST_SPOT.x, HEIST_SPOT.y, HEIST_SPOT.angle, '#f0c040', { driver: 'none' });
+  car.isHeist = true;
+  state.cars.push(car);
+  return car;
+}
+
+/** Three rival cars for the Strip Sprint, ahead of the player on the race road. */
+function spawnRivals(state) {
+  state.cars = state.cars.filter((c) => !c.isRival);
+  const spots = [600, 850, 1100];
+  const colors = ['#4a90d9', '#d94a6a', '#7ab648'];
+  for (let i = 0; i < 3; i += 1) {
+    const car = createCar('traffic', spots[i], 1400 + (i % 2 === 0 ? -20 : 20), 0, colors[i],
+      { driver: 'ai', ai: { axis: 'h', road: 1400, dir: 1, speed: 300 } });
+    car.speed = 300;
+    car.isRival = true;
+    state.cars.push(car);
+  }
 }
 
 export function startMission(state, index) {
@@ -26,10 +61,11 @@ export function startMission(state, index) {
   state.mission = {
     index, id: def.id, title: def.title, objective: def.objective,
     briefing: def.briefing, reward: def.reward,
-    stage: def.id === 'courier' ? 'pickup' : 'active',
+    stage: (def.id === 'courier' || def.id === 'kingpin') ? 'pickup' : 'active',
     target: { x: place.x, y: place.y, label: place.name },
     timer: def.timer || 0, timerMax: def.timer || 0,
     text: def.briefing, enemiesLeft: 0, collected: 0,
+    survive: !!def.survive, checkpoints: null, heistCar: null,
   };
   setToast(state, `${def.title} — ${def.objective}`);
   state.audio.missionSting();
@@ -40,6 +76,23 @@ export function startMission(state, index) {
   }
   if (def.id === 'showdown') {
     spawnCrew(state);
+  }
+  if (def.id === 'heist') {
+    const car = spawnHeistCar(state);
+    state.mission.heistCar = car;
+    state.mission.stage = 'steal';
+    state.mission.target = { x: car.x, y: car.y, label: 'Gold coupe — Marina Row' };
+  }
+  if (def.id === 'race') {
+    spawnRivals(state);
+    state.mission.checkpoints = RACE_CHECKPOINTS.map((c) => ({ ...c }));
+    state.mission.stage = 'race';
+    state.mission.target = { x: RACE_CHECKPOINTS[0].x, y: RACE_CHECKPOINTS[0].y, label: 'Checkpoint 1/5' };
+  }
+  if (def.id === 'sky') {
+    state.wanted = 4;
+    state.heat = 0;
+    state.audio.wantedUp();
   }
 }
 
@@ -63,11 +116,23 @@ function completeMission(state) {
   state.stats.earned += pay;
   state.audio.cash();
   setToast(state, `${m.title} complete! +$${pay}`);
+  // The "Mission Complete" panel the HUD shows for a few seconds.
+  state.missionComplete = {
+    title: m.title, reward: pay,
+    missionsDone: state.stats.missionsDone, cash: Math.floor(state.cash),
+    timer: 4,
+  };
   saveGame(state);
   if (m.index + 1 < MISSIONS.length) {
     startMission(state, m.index + 1);
   } else {
     state.storyDone = true;
+    // The ending screen after the finale: Mara's sign-off and the run's stats.
+    state.ending = {
+      cash: Math.floor(state.cash), earned: state.stats.earned,
+      missionsDone: state.stats.missionsDone, stolen: state.stats.stolen,
+      clockMin: state.clockMin,
+    };
     state.mission = {
       index: m.index + 1, id: 'done', title: 'Sunport Is Yours',
       objective: 'Free roam — take side jobs, explore, and keep the city yours.',
@@ -93,6 +158,11 @@ export function updateMissions(state, dt) {
   if (m.timer > 0) {
     m.timer -= dt;
     if (m.timer <= 0) {
+      // A survival mission is won by outlasting the clock, not beaten by it.
+      if (m.survive) {
+        completeMission(state);
+        return;
+      }
       failMission(state, 'out of time');
       return;
     }
@@ -131,6 +201,81 @@ export function updateMissions(state, dt) {
     }
     m.enemiesLeft = alive;
     if (alive === 0) completeMission(state);
+    return;
+  }
+  if (m.id === 'heist') {
+    const car = m.heistCar;
+    if (!car || car.health <= 0) {
+      failMission(state, 'the coupe was wrecked');
+      return;
+    }
+    if (m.stage === 'steal') {
+      // Keep the marker on the coupe until the player is driving it.
+      m.target = { x: car.x, y: car.y, label: 'Gold coupe — Marina Row' };
+      if (!p.onFoot && p.car === car) {
+        m.stage = 'deliver';
+        m.target = { x: PLACES.safehouse.x, y: PLACES.safehouse.y, label: PLACES.safehouse.name };
+        m.objective = 'Bring the gold coupe home to the safehouse — keep it in one piece';
+        setToast(state, 'Coupe stolen! Get it home — don\'t scratch it!');
+        state.audio.pickup();
+      }
+      return;
+    }
+    // Delivering: out of the coupe means back to stealing it.
+    if (p.onFoot || p.car !== car) {
+      m.stage = 'steal';
+      m.target = { x: car.x, y: car.y, label: 'Gold coupe — Marina Row' };
+      setToast(state, 'Get back in the gold coupe!');
+      return;
+    }
+    const home = PLACES.safehouse;
+    if (distance(p.x, p.y, home.x, home.y) < 160) {
+      if (car.health < 50) failMission(state, 'the coupe is too damaged');
+      else completeMission(state);
+    }
+    return;
+  }
+  if (m.id === 'race') {
+    // Checkpoints only count behind the wheel — this is a race, not a walk.
+    if (!p.onFoot && p.car && m.checkpoints) {
+      const next = m.checkpoints[m.collected];
+      if (next && distance(p.x, p.y, next.x, next.y) < 100) {
+        m.collected += 1;
+        state.audio.pickup();
+        if (m.collected >= m.checkpoints.length) {
+          completeMission(state);
+          return;
+        }
+        const following = m.checkpoints[m.collected];
+        m.target = { x: following.x, y: following.y, label: `Checkpoint ${m.collected + 1}/5` };
+        setToast(state, `Checkpoint ${m.collected}/5!`);
+      }
+    }
+    return;
+  }
+  if (m.id === 'sky') {
+    // Survive: the timer does the work; the helicopter and the PD do the rest.
+    return;
+  }
+  if (m.id === 'kingpin') {
+    if (m.stage === 'pickup') {
+      const t = PLACES.marina;
+      if (distance(p.x, p.y, t.x, t.y) < 110) {
+        m.stage = 'deliver';
+        m.target = { x: PLACES.foundry.x, y: PLACES.foundry.y, label: PLACES.foundry.name };
+        m.objective = 'Five stars on you — deliver the package to the Old Foundry';
+        m.timer = 120;
+        m.timerMax = 120;
+        state.wanted = 5;
+        state.heat = 0;
+        state.audio.wantedUp();
+        setToast(state, 'Package grabbed! Five stars — run for the Foundry!');
+        state.audio.pickup();
+      }
+      return;
+    }
+    const t = PLACES.foundry;
+    if (distance(p.x, p.y, t.x, t.y) < 160) completeMission(state);
   }
 }
 

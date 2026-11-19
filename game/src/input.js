@@ -10,6 +10,7 @@ export const ACTION_ENTER = 4;
 export const ACTION_ATTACK = 8;
 export const ACTION_MAP = 16;
 export const ACTION_MUTE = 32;
+export const ACTION_RADIO = 64;
 
 const UP = new Set(['ArrowUp', 'KeyW']);
 const DOWN = new Set(['ArrowDown', 'KeyS']);
@@ -21,6 +22,7 @@ const ENTER = new Set(['KeyE']);
 const ATTACK = new Set(['KeyF']);
 const MAP = new Set(['KeyM']);
 const MUTE = new Set(['KeyN']);
+const RADIO = new Set(['KeyR']);
 const RUN = new Set(['ShiftLeft', 'ShiftRight']);
 
 export function createInput(target) {
@@ -35,6 +37,13 @@ export function createInput(target) {
       event.preventDefault();
       return;
     }
+    // Space is both the handbrake (held) and confirm (one-shot).
+    if (event.code === 'Space') {
+      held.add(event.code);
+      if (!event.repeat) actions |= ACTION_CONFIRM;
+      event.preventDefault();
+      return;
+    }
     if (event.repeat) return;
     if (CONFIRM.has(event.code)) actions |= ACTION_CONFIRM;
     else if (PAUSE.has(event.code)) actions |= ACTION_PAUSE;
@@ -42,6 +51,7 @@ export function createInput(target) {
     else if (ATTACK.has(event.code)) actions |= ACTION_ATTACK;
     else if (MAP.has(event.code)) actions |= ACTION_MAP;
     else if (MUTE.has(event.code)) actions |= ACTION_MUTE;
+    else if (RADIO.has(event.code)) actions |= ACTION_RADIO;
     else return;
     event.preventDefault();
   });

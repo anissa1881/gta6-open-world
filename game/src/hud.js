@@ -2,7 +2,7 @@
 // logical screen space (1280x720) after the renderer switches the transform:
 // health and cash top-left, wanted stars top-right, the objective across the
 // top, the clock and district bottom-left, and the minimap bottom-right.
-import { FONT, PALETTE, PLACES, VIEW, WORLD } from './config.js';
+import { FONT, PALETTE, PLACES, RANKS, VIEW, WORLD } from './config.js';
 import { currentTarget } from './missions.js';
 import { districtAt } from './city.js';
 import { hasSave } from './save.js';
@@ -29,6 +29,15 @@ function clockText(minutes) {
   const h = Math.floor(minutes / 60) % 24;
   const m = Math.floor(minutes % 60);
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** The player's street rank, from missions done and cash earned. */
+export function rankFor(state) {
+  let rank = RANKS[0].name;
+  for (const r of RANKS) {
+    if (state.stats.missionsDone >= r.missions || Math.floor(state.cash) >= r.cash) rank = r.name;
+  }
+  return rank;
 }
 
 function drawMinimap(ctx, state, big) {
@@ -64,6 +73,18 @@ function drawMinimap(ctx, state, big) {
     ctx.beginPath();
     ctx.arc(x + car.x * sx, y + car.y * sy, 3, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // Helicopters as orange dots with a ring.
+  for (const h of state.helis) {
+    ctx.fillStyle = '#ff9a3c';
+    ctx.beginPath();
+    ctx.arc(x + h.x * sx, y + h.y * sy, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ff9a3c';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(x + h.x * sx, y + h.y * sy, 7, 0, Math.PI * 2);
+    ctx.stroke();
   }
   // Objective target.
   const target = currentTarget(state);
@@ -105,6 +126,10 @@ function drawHudPlay(ctx, state) {
   ctx.fillRect(28, 44, 180 * Math.max(0, state.health / 100), 12);
   text(ctx, `$${Math.floor(state.cash)}`, 220, 56, 20, PALETTE.cash, 'left');
   if (p.onFoot) text(ctx, `AMMO ${p.ammo}`, 28, 72, 13, PALETTE.text, 'left');
+  // Radio station under the health panel.
+  if (state.radio) {
+    text(ctx, `♪ ${state.radio.stationName()} — ${state.radio.trackName()}`, 28, 96, 14, PALETTE.muted, 'left');
+  }
   // Top-right: wanted stars.
   panel(ctx, VIEW.width - 266, 14, 250, 64);
   text(ctx, state.wanted > 0 ? 'WANTED' : 'CLEAN', VIEW.width - 254, 36, 13, state.wanted > 0 ? '#ff6b5e' : PALETTE.muted, 'left');
@@ -125,10 +150,14 @@ function drawHudPlay(ctx, state) {
       text(ctx, `⏱ ${Math.ceil(timer)}s`, VIEW.width / 2, 66, 18, timer < 15 ? '#ff6b5e' : PALETTE.marker, 'center');
     } else if (m && m.id === 'showdown') {
       text(ctx, `Crew left: ${m.enemiesLeft}`, VIEW.width / 2, 66, 18, PALETTE.marker, 'center');
+    } else if (m && m.id === 'race') {
+      text(ctx, `Checkpoint ${m.collected + 1}/5 — stay in the car!`, VIEW.width / 2, 66, 18, PALETTE.marker, 'center');
     } else {
       text(ctx, 'Follow the yellow marker', VIEW.width / 2, 66, 15, PALETTE.muted, 'center');
     }
   }
+  // Missions done + rank, under the wanted panel.
+  text(ctx, `MISI ${state.stats.missionsDone}/8  •  RANK ${rankFor(state)}`, VIEW.width - 16, 108, 16, PALETTE.panelEdge, 'right');
   // Toast message under the banner.
   if (state.toast && state.toast.timer > 0) {
     ctx.globalAlpha = Math.min(1, state.toast.timer);
@@ -149,9 +178,19 @@ function drawHudPlay(ctx, state) {
   if (state.time < 45) {
     ctx.fillStyle = 'rgba(20, 26, 34, 0.75)';
     ctx.fillRect(VIEW.width / 2 - 330, VIEW.height - 216, 660, 30);
-    text(ctx, 'WASD move/drive • E enter car • F punch/shoot • Space handbrake • M map • Esc pause', VIEW.width / 2, VIEW.height - 194, 15, 'rgba(244,239,226,0.95)', 'center');
+    text(ctx, 'WASD move/drive • E enter car • F shoot • Space handbrake • R radio • M map', VIEW.width / 2, VIEW.height - 194, 15, 'rgba(244,239,226,0.95)', 'center');
   }
   drawMinimap(ctx, state, state.mapBig);
+  // "Mission Complete" panel: reward and run stats, a few seconds after a job.
+  if (state.missionComplete && state.missionComplete.timer > 0) {
+    const mc = state.missionComplete;
+    ctx.globalAlpha = Math.min(1, mc.timer);
+    panel(ctx, 440, 280, 400, 160);
+    text(ctx, 'MISSION COMPLETE', 640, 326, 28, PALETTE.panelEdge, 'center');
+    text(ctx, mc.title, 640, 360, 20, PALETTE.text, 'center');
+    text(ctx, `+$${mc.reward}   •   Missions ${mc.missionsDone}/8   •   Cash $${mc.cash}`, 640, 396, 17, PALETTE.cash, 'center');
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawTitle(ctx, state) {
@@ -160,13 +199,14 @@ function drawTitle(ctx, state) {
   text(ctx, 'An original open-world crime game', 640, 240, 22, PALETTE.text, 'center');
   text(ctx, 'New in town, $150 in your pocket, and a call from fixer Mara Voss.', 640, 282, 19, PALETTE.muted, 'center');
   text(ctx, 'Steal cars. Outrun the Sunport PD. Run her jobs. Own the city.', 640, 310, 19, PALETTE.muted, 'center');
+  text(ctx, '8 story missions • police helicopters • street races • 3 radio stations', 640, 340, 17, PALETTE.panelEdge, 'center');
   const lines = [
     'WASD / arrows — walk and drive    •    E — enter / exit car',
     'F — punch / shoot (aim with mouse)    •    Space — handbrake',
-    'Shift — run    •    M — bigger map    •    N — mute    •    Esc — pause',
+    'R — radio    •    Shift — run    •    M — bigger map    •    N — mute    •    Esc — pause',
     'Reach your safehouse in Palm Heights to save your game.',
   ];
-  lines.forEach((line, i) => text(ctx, line, 640, 360 + i * 28, 17, PALETTE.text, 'center'));
+  lines.forEach((line, i) => text(ctx, line, 640, 372 + i * 28, 17, PALETTE.text, 'center'));
   text(ctx, 'Press Enter or click to start', 640, 520, 24, PALETTE.panelEdge, 'center');
   if (hasSave()) text(ctx, 'Press C to continue your saved game', 640, 552, 18, PALETTE.cash, 'center');
   if (state.storyDone) text(ctx, 'Story complete — free roam unlocked', 640, 580, 16, PALETTE.cash, 'center');
@@ -206,5 +246,16 @@ export function drawHud(ctx, state, screen) {
   else if (screen === 'wasted') drawEnd(ctx, state, 'wasted');
   if (state.storyDone && screen === 'play') {
     text(ctx, '★ STORY COMPLETE — SUNPORT IS YOURS ★', VIEW.width / 2, 150, 18, PALETTE.panelEdge, 'center');
+  }
+  // The ending screen after the Kingpin finale, until Enter dismisses it.
+  if (state.ending && screen === 'play') {
+    const e = state.ending;
+    panel(ctx, 340, 190, 600, 320);
+    text(ctx, 'SUNPORT KINGPIN', 640, 262, 44, PALETTE.panelEdge, 'center');
+    text(ctx, 'Mara Voss: "Sunport is yours now. Eight jobs,', 640, 308, 18, PALETTE.text, 'center');
+    text(ctx, 'five stars of heat, and you walked away clean."', 640, 334, 18, PALETTE.text, 'center');
+    text(ctx, `Missions ${e.missionsDone}/8  •  Cash $${e.cash}  •  Earned $${e.earned}`, 640, 380, 18, PALETTE.cash, 'center');
+    text(ctx, `Cars stolen ${e.stolen}  •  Rank KINGPIN`, 640, 410, 18, PALETTE.muted, 'center');
+    text(ctx, 'Press Enter to keep roaming Sunport City', 640, 462, 20, PALETTE.panelEdge, 'center');
   }
 }

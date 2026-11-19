@@ -8,15 +8,17 @@
 import { CAR, MISSIONS, PLACES, STEP, VIEW, WORLD } from './config.js';
 import { createRandom, clamp, distance } from './random.js';
 import { createCity, inSafehouse } from './city.js';
-import { ACTION_ATTACK, ACTION_CONFIRM, ACTION_ENTER, ACTION_MAP, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
+import { ACTION_ATTACK, ACTION_CONFIRM, ACTION_ENTER, ACTION_MAP, ACTION_MUTE, ACTION_PAUSE, ACTION_RADIO, createInput } from './input.js';
 import { createPlayer, updatePlayerOnFoot, nearestCar, enterCar, exitCar } from './player.js';
 import { updatePlayerCar } from './vehicles.js';
 import { createTraffic, createParkedCars, updateTraffic } from './traffic.js';
 import { createPedestrians, updatePedestrians } from './pedestrians.js';
 import { updateWanted, updatePolice } from './police.js';
+import { updateHelicopters } from './helicopter.js';
 import { SIDE_SPOTS, startMission, startSideJob, updateMissions, updateSideJobs } from './missions.js';
 import { punch, shootPlayer, updateBullets } from './combat.js';
 import { createAudio } from './audio.js';
+import { createRadio } from './radio.js';
 import { createRenderer, SCREEN_BUSTED, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WASTED } from './render.js';
 import { drawHud } from './hud.js';
 import { clearSave, hasSave, loadGame, saveGame } from './save.js';
@@ -38,14 +40,16 @@ const renderer = createRenderer(canvas);
 function createState(seedValue) {
   const rng = createRandom(seedValue);
   const state = {
-    seed: seedValue, rng, audio: createAudio(),
+    seed: seedValue, rng, audio: createAudio(), radio: createRadio(),
     city: null, time: 0, clockMin: 8 * 60 + 15,
     cash: 150, health: 100, wanted: 0, wantedTimer: 0, heat: 0, shootCrimeTimer: 0,
     storyDone: false, mapBig: false, toast: null, busted: false, wasted: false,
     stats: { stolen: 0, missionsDone: 0, earned: 0 },
-    player: null, cars: [], peds: [], police: [], bullets: [], bulletRequests: [],
-    particles: [], pickups: [], mission: null, side: null,
-    camera: { x: 0, y: 0 }, savedAtSafehouse: false,
+    player: null, cars: [], peds: [], police: [], helis: [], bullets: [], bulletRequests: [],
+    particles: [], skids: [], pickups: [], mission: null, side: null,
+    camera: { x: 0, y: 0 }, zoom: 1, shake: null,
+    missionComplete: null, ending: null,
+    savedAtSafehouse: false,
   };
   state.city = createCity(rng);
   state.player = createPlayer(300, 200);
@@ -56,10 +60,22 @@ function createState(seedValue) {
   return state;
 }
 
+/**
+ * The camera follows the player smoothly and zooms with speed: a little closer
+ * on foot, a little wider at full speed. The zoom changes the visible window,
+ * so the camera is clamped to what the zoomed view actually shows.
+ */
 function updateCamera(state) {
   const p = state.player;
-  state.camera.x = clamp(p.x - VIEW.width / 2, 0, WORLD.width - VIEW.width);
-  state.camera.y = clamp(p.y - VIEW.height / 2, 0, WORLD.height - VIEW.height);
+  const speed = p.onFoot ? 0 : Math.abs(p.car ? p.car.speed : 0);
+  const targetZoom = p.onFoot ? 1.06 : (speed > 380 ? 0.92 : 1.0);
+  state.zoom += (targetZoom - state.zoom) * 0.12;
+  const visibleW = VIEW.width / state.zoom;
+  const visibleH = VIEW.height / state.zoom;
+  const tx = clamp(p.x - visibleW / 2, 0, WORLD.width - visibleW);
+  const ty = clamp(p.y - visibleH / 2, 0, WORLD.height - visibleH);
+  state.camera.x += (tx - state.camera.x) * 0.12;
+  state.camera.y += (ty - state.camera.y) * 0.12;
 }
 
 function updateParticles(state, dt) {
@@ -69,14 +85,15 @@ function updateParticles(state, dt) {
     pt.life -= dt;
   }
   state.particles = state.particles.filter((pt) => pt.life > 0);
+  for (const skid of state.skids) skid.life -= dt;
+  state.skids = state.skids.filter((skid) => skid.life > 0);
 }
 
 /** The mouse aim in world coordinates, from the pointer's screen position. */
 function aimAngle(state, input) {
   const p = state.player;
-  const sx = (input.mouse.x - renderer.view.x) / renderer.view.scale;
-  const sy = (input.mouse.y - renderer.view.y) / renderer.view.scale;
-  return Math.atan2(state.camera.y + sy - p.y, state.camera.x + sx - p.x);
+  const world = renderer.screenToWorld(input.mouse.x, input.mouse.y);
+  return Math.atan2(world.y - p.y, world.x - p.x);
 }
 
 /** True when a pedestrian or a car is close enough in front of the player to punch. */
@@ -139,6 +156,8 @@ function respawn(state) {
   state.wanted = 0;
   state.wantedTimer = 0;
   state.police.length = 0;
+  state.helis.length = 0;
+  state.shake = null;
   state.cars = state.cars.filter((c) => c.kind !== 'police');
   state.audio.siren(false);
   state.audio.engine(0);
@@ -181,6 +200,11 @@ function runGame() {
   let screen = SCREEN_TITLE;
   let accumulator = 0;
   let last = performance.now();
+  // Debug handle for play-testing (does not affect gameplay): live state + screen.
+  window.__sunport = {
+    get state() { return state; },
+    get screen() { return screen; },
+  };
 
   function announce(message) {
     status.textContent = message;
@@ -195,6 +219,8 @@ function runGame() {
     accumulator = 0;
     screen = SCREEN_PLAY;
     state.audio.ensure();
+    state.radio.ensure();
+    state.radio.start();
     announce(`Playing in Sunport City. ${state.mission ? state.mission.title : ''}.`);
   }
 
@@ -210,7 +236,9 @@ function runGame() {
   function handleActions() {
     const actions = input.takeActions();
     if (actions & ACTION_MUTE) {
-      state.audio.setMuted(!state.audio.isMuted());
+      const muted = !state.audio.isMuted();
+      state.audio.setMuted(muted);
+      state.radio.setMuted(muted);
     }
     if (screen === SCREEN_TITLE) {
       if (actions & ACTION_CONFIRM) startGame(false);
@@ -230,7 +258,17 @@ function runGame() {
       return;
     }
     if (screen !== SCREEN_PLAY) return;
+    // The ending screen waits for Enter before the city opens up again.
+    if (state.ending && (actions & ACTION_CONFIRM)) {
+      state.ending = null;
+      return;
+    }
     if (actions & ACTION_MAP) state.mapBig = !state.mapBig;
+    if (actions & ACTION_RADIO) {
+      const station = state.radio.next();
+      state.toast = { text: `Radio: ${station} — ${state.radio.trackName()}`, timer: 3 };
+      state.audio.click();
+    }
     if (actions & ACTION_ENTER) tryEnter(state);
     if (actions & ACTION_ATTACK) {
       if (state.player.onFoot) {
@@ -247,6 +285,14 @@ function runGame() {
     if (state.toast) {
       state.toast.timer -= STEP;
       if (state.toast.timer <= 0) state.toast = null;
+    }
+    if (state.missionComplete) {
+      state.missionComplete.timer -= STEP;
+      if (state.missionComplete.timer <= 0) state.missionComplete = null;
+    }
+    if (state.shake) {
+      state.shake.timer -= STEP;
+      if (state.shake.timer <= 0) state.shake = null;
     }
     if (screen === SCREEN_TITLE) {
       // The title screen shows the living city, camera drifting over the Strip.
@@ -272,6 +318,7 @@ function runGame() {
     updatePedestrians(state, STEP);
     updateWanted(state, STEP);
     updatePolice(state, STEP);
+    updateHelicopters(state, STEP);
     updateMissions(state, STEP);
     updateSideJobs(state, STEP);
     updateBullets(state, STEP);

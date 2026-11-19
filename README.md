@@ -34,14 +34,28 @@ Plaza, Dockside and Old Foundry.
   officers who chase and ram you. Break line of sight and stay hidden to cool
   the heat down. If an officer catches you on foot, you are Busted; if your
   health hits zero, you are Wasted.
-- **Missions:** follow the yellow marker. Mara Voss's story chain is four jobs:
+- **Missions:** follow the yellow marker. Mara Voss's story chain is eight jobs:
   1. Getaway Wheels — steal a car and bring it to Sunport Strip.
   2. Sunport Courier — pick up a package at Marina Row and deliver it to
      Dockside before the timer runs out.
   3. Lose the Tail — shake a 3-star wanted level.
   4. Dockside Showdown — settle things with the Dockside crew.
-  Completing a job pays cash. Side jobs appear as markers around the city:
+  5. Harbor Heist — steal the gold coupe at Marina Row and bring it home to
+     the safehouse without wrecking it.
+  6. Strip Sprint — street race on the Strip: hit all 5 checkpoints before
+     the timer ends, against three rival cars.
+  7. Eyes in the Sky — survive 90 seconds with a police helicopter overhead
+     at 4 stars.
+  8. Sunport Kingpin — the finale: pick up the Kingpin's package at Marina
+     Row and run five stars of heat to the Old Foundry.
+  Completing a job pays cash and raises your rank (Street → Hustler →
+  Wheelman → Fixer → Kingpin). Side jobs appear as markers around the city:
   taxi fares, package runs and vigilante work.
+- **Police helicopter:** at wanted level 3 and up, a Sunport PD helicopter
+  follows you with a spotlight and keeps the patrol cars coming — one heli
+  at 3–4 stars, two at 5 stars. It never shoots.
+- **Radio:** three synth stations (Sunset FM, Strip FM, Chase FM) — press R
+  to switch, N to mute. The station and track show on the HUD.
 - **HUD:** health and cash top-left, wanted stars top-right, the current
   objective across the top, a clock, and a minimap bottom-right (M toggles it
   bigger). Esc or P pauses. Mute with N.
@@ -66,8 +80,10 @@ Screenshots are staged deterministically with `?shot=chase|downtown|drive|missio
 - `game/index.html` + `game/src/` — the game itself, plain ES modules:
   `main.js` (loop and screens), `city.js` (the city), `player.js`,
   `vehicles.js`, `traffic.js`, `pedestrians.js`, `police.js` (wanted level and
-  pursuit), `missions.js` (story chain and side jobs), `combat.js`,
-  `hud.js` (HUD and minimap), `render.js` (canvas drawing), `audio.js`
+  pursuit), `helicopter.js` (the police helicopter), `missions.js` (story
+  chain and side jobs), `combat.js`, `hud.js` (HUD and minimap), `render.js`
+  (canvas drawing), `audio.js` (synthesised sound), `radio.js` (three synth
+  radio stations), `effects.js` (screen shake),
   (synthesised sound), `save.js`, `input.js`, `config.js`, `random.js`,
   `shots.js` (deterministic screenshot scenes).
 - `vendor/makefun-game.ts` — the kit's dossier library, unchanged.

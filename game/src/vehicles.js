@@ -4,6 +4,7 @@
 import { CAR } from './config.js';
 import { angleDelta, clamp, distance } from './random.js';
 import { hitsSolid, resolveCircle } from './city.js';
+import { addShake } from './effects.js';
 
 let nextId = 1;
 
@@ -49,12 +50,28 @@ export function updatePlayerCar(state, input, dt) {
     if (Math.abs(car.speed) > 180) {
       damageCar(state, car, Math.abs(car.speed) * 0.06, true);
       state.audio.crash();
+      addShake(state, Math.min(10, Math.abs(car.speed) * 0.02));
       spawnSmoke(state, nx, ny, 6);
     }
     car.speed *= -0.35;
   } else {
     car.x = nx;
     car.y = ny;
+  }
+  // Handbrake at speed: skid marks on the road and a puff of dust.
+  if (handbrake && Math.abs(car.speed) > 180) {
+    const bx = car.x - Math.cos(car.angle) * 26;
+    const by = car.y - Math.sin(car.angle) * 26;
+    state.skids.push({ x: bx, y: by, angle: car.angle, life: 4, maxLife: 4 });
+    if (state.skids.length > 240) state.skids.splice(0, state.skids.length - 240);
+    if (state.rng() < 0.6) {
+      state.particles.push({
+        x: bx + (state.rng() - 0.5) * 16, y: by + (state.rng() - 0.5) * 16,
+        vx: (state.rng() - 0.5) * 40, vy: -20 - state.rng() * 20,
+        life: 0.6, maxLife: 0.6, size: 5 + state.rng() * 5,
+        color: 'rgba(190, 170, 130, 0.5)', kind: 'dust',
+      });
+    }
   }
   const fixed = resolveCircle(state.city, car.x, car.y, 24);
   car.x = fixed.x;
@@ -83,12 +100,21 @@ export function damageCar(state, car, amount, byPlayer) {
   }
 }
 
-/** A little smoke every frame while a car is damaged or wrecked. */
+/** A little smoke every frame while a car is damaged or wrecked; fire below 25 health. */
 export function updateCarSmoke(state, car, dt) {
   car.smokeTimer -= dt;
   if (car.health < 55 && car.smokeTimer <= 0) {
     car.smokeTimer = car.health <= 0 ? 0.08 : 0.22;
     spawnSmoke(state, car.x - Math.cos(car.angle) * 20, car.y - Math.sin(car.angle) * 20, 1);
+  }
+  if (car.health > 0 && car.health < 25 && state.rng() < 0.25) {
+    state.particles.push({
+      x: car.x - Math.cos(car.angle) * 10 + (state.rng() - 0.5) * 20,
+      y: car.y - Math.sin(car.angle) * 10 + (state.rng() - 0.5) * 20,
+      vx: (state.rng() - 0.5) * 20, vy: -50 - state.rng() * 40,
+      life: 0.35, maxLife: 0.35, size: 6 + state.rng() * 6,
+      color: state.rng() < 0.5 ? '#ff7a2a' : '#ffd23f', kind: 'fire',
+    });
   }
 }
 

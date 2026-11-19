@@ -43,6 +43,18 @@ export const TRAFFIC = { count: 22, speed: 150, speedJitter: 45, minGap: 90 };
 export const PEDS = { count: 30, walkSpeed: 55, fleeSpeed: 170 };
 export const POLICE = { carSpeed: 560, footSpeed: 250, ramDamage: 9, catchSeconds: 1.2 };
 
+/** The police helicopter: speed, how close it hovers, and its spotlight reach. */
+export const HELI = { speed: 330, hover: 190, spotRadius: 190, seeRange: 700, max: 2 };
+
+/** Player rank, from missions done and cash: Street, Hustler, Wheelman, Fixer, Kingpin. */
+export const RANKS = [
+  { name: 'Street', missions: 0, cash: 0 },
+  { name: 'Hustler', missions: 2, cash: 800 },
+  { name: 'Wheelman', missions: 4, cash: 2000 },
+  { name: 'Fixer', missions: 6, cash: 4000 },
+  { name: 'Kingpin', missions: 8, cash: 7000 },
+];
+
 export const WANTED = {
   max: 5,
   stealCar: 1,
@@ -110,6 +122,42 @@ export const MISSIONS = [
     reward: 600,
     place: 'dockside',
   },
+  {
+    id: 'heist',
+    title: 'Harbor Heist',
+    briefing: 'Mara Voss: "A gold GT coupe is parked at Marina Row — the harbourmaster\'s pride. Steal it and bring it home to the safehouse. Scratch it up and the deal is off."',
+    objective: 'Steal the gold coupe at Marina Row and bring it to the safehouse undamaged',
+    reward: 700,
+    place: 'marina',
+  },
+  {
+    id: 'race',
+    title: 'Strip Sprint',
+    briefing: 'Mara Voss: "Street race on the Strip tonight. Five checkpoints, three rivals, one winner. Be in a car and hit every checkpoint before the clock runs out."',
+    objective: 'Race the Strip: hit all 5 checkpoints before the timer ends',
+    reward: 800,
+    place: 'strip',
+    timer: 100,
+  },
+  {
+    id: 'sky',
+    title: 'Eyes in the Sky',
+    briefing: 'Mara Voss: "Four stars and a police heli is on you. Survive 90 seconds — the heli will keep the patrol cars coming, so don\'t stop moving."',
+    objective: 'Survive 90 seconds with the police helicopter on you',
+    reward: 900,
+    place: 'plaza',
+    timer: 90,
+    survive: true,
+  },
+  {
+    id: 'kingpin',
+    title: 'Sunport Kingpin',
+    briefing: 'Mara Voss: "One last job. Pick up the Kingpin\'s package at Marina Row, then run five stars of heat all the way to the Old Foundry. Do this and Sunport is yours."',
+    objective: 'Pick up the package at Marina Row, then deliver it to the Old Foundry at 5 stars',
+    reward: 1000,
+    place: 'marina',
+    timer: 120,
+  },
 ];
 
 export const SIDE_JOBS = {
@@ -148,6 +196,14 @@ export const PALETTE = {
   cash: '#7ee081',
   star: '#ffd23f',
   starEmpty: '#5a5a5a',
+  heli: '#2f3a4a',
+  heliLight: '#ff5a3c',
+  spotlight: 'rgba(255, 240, 170, 0.20)',
+  lampGlow: 'rgba(255, 214, 120, 0.45)',
+  goldenWash: 'rgba(255, 150, 60, 0.07)',
+  wetSheen: 'rgba(255, 255, 255, 0.10)',
+  skid: 'rgba(20, 20, 20, 0.35)',
+  fire: '#ff7a2a',
 };
 
 export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';

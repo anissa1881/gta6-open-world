@@ -1,12 +1,14 @@
 // The wanted level and the Sunport PD. Stars rise with crime and fall when the
 // player breaks line of sight and stays hidden. Patrol cars chase and ram; foot
 // officers run the player down on foot, and if one holds on long enough the
-// player is Busted.
+// player is Busted. A police helicopter overhead keeps the player spotted.
 import { PALETTE, POLICE, WANTED } from './config.js';
 import { clamp, distance } from './random.js';
 import { createCar, steerToward, damageCar, spawnSparks } from './vehicles.js';
 import { damagePlayer } from './player.js';
 import { nearestRoad, randomRoadPoint, resolveCircle } from './city.js';
+import { heliSeesPlayer } from './helicopter.js';
+import { addShake } from './effects.js';
 
 function policeSeesPlayer(state) {
   const p = state.player;
@@ -17,6 +19,8 @@ function policeSeesPlayer(state) {
   for (const officer of state.police) {
     if (distance(officer.x, officer.y, p.x, p.y) < 420) return true;
   }
+  // A helicopter overhead keeps the player spotted for the whole PD.
+  if (state.helis && heliSeesPlayer(state)) return true;
   return false;
 }
 
@@ -49,11 +53,13 @@ export function updatePoliceSpawns(state) {
   while (cars < wantCars) {
     const spot = randomRoadPoint(state.city, state.rng);
     // Spawn off-screen but on a road, so the chase arrives instead of appearing.
+    // With a helicopter marking the player, the patrol arrives closer and faster.
+    const spawnDist = state.helis && state.helis.length > 0 ? 520 : 700;
     const dx = spot.x - p.x;
     const dy = spot.y - p.y;
     const d = Math.hypot(dx, dy) || 1;
-    const sx = p.x + (dx / d) * 700;
-    const sy = p.y + (dy / d) * 700;
+    const sx = p.x + (dx / d) * spawnDist;
+    const sy = p.y + (dy / d) * spawnDist;
     const road = nearestRoad(state.city, sx, sy);
     const car = createCar(
       'police',
@@ -110,6 +116,7 @@ export function updatePolice(state, dt) {
       }
       spawnSparks(state, car.x, car.y, 3);
       state.audio.crash();
+      addShake(state, 7);
       car.speed *= 0.4;
       // Back off a little so the ram does not stick every frame.
       car.x -= Math.cos(car.angle) * 30;

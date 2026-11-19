@@ -7,6 +7,8 @@ import { MISSIONS, PALETTE, PLACES, VIEW, WORLD } from './config.js';
 import { createCar } from './vehicles.js';
 import { makePed } from './pedestrians.js';
 import { clamp } from './random.js';
+import { createHelicopter } from './helicopter.js';
+import { RACE_CHECKPOINTS } from './missions.js';
 
 function setMission(state, index, stage, timer) {
   const def = MISSIONS[index];
@@ -18,6 +20,7 @@ function setMission(state, index, stage, timer) {
     target: { x: place.x, y: place.y, label: place.name },
     timer: timer || 0, timerMax: timer || 0,
     text: def.briefing, enemiesLeft: 0, collected: 0,
+    survive: !!def.survive, checkpoints: null, heistCar: null,
   };
 }
 
@@ -69,6 +72,12 @@ export function stageShot(name, state) {
   state.cars = [];
   state.peds = [];
   state.police = [];
+  state.helis = [];
+  state.skids = [];
+  state.shake = null;
+  state.missionComplete = null;
+  state.ending = null;
+  state.zoom = 1;
   state.bullets = [];
   state.particles = [];
   state.pickups = [];
@@ -107,44 +116,62 @@ export function stageShot(name, state) {
   }
 
   if (name === 'drive') {
-    // Driving fast down the Strip, one star, courier job on the HUD.
-    state.cash = 520;
-    state.wanted = 1;
-    placePlayerCar(state, 1000, 1400, 0, 460);
-    setMission(state, 1, 'deliver', 62);
-    state.mission.target = { x: PLACES.dockside.x, y: PLACES.dockside.y, label: PLACES.dockside.name };
-    state.mission.objective = 'Deliver the package to Dockside before the timer ends';
-    addTrafficCar(state, 1250, 1400, 0, '#4a90d9');
-    addTrafficCar(state, 1450, 1400, 0, '#e8a13c');
-    addTrafficCar(state, 800, 1400, Math.PI, '#7ab648');
-    addPeds(state, [[1150, 1330], [1300, 1470], [900, 1330]]);
+    // Strip Sprint: racing the Strip, checkpoint 2 of 5, rivals ahead.
+    state.cash = 1200;
+    state.wanted = 2;
+    placePlayerCar(state, 600, 1400, 0, 460);
+    setMission(state, 5, 'race', 62);
+    state.mission.checkpoints = RACE_CHECKPOINTS.map((c) => ({ ...c }));
+    state.mission.collected = 1;
+    state.mission.target = { x: 700, y: 1400, label: 'Checkpoint 2/5' };
+    state.mission.timerMax = 100;
+    for (const [x, color] of [[820, '#4a90d9'], [1010, '#d94a6a'], [1210, '#7ab648']]) {
+      const rival = createCar('traffic', x, 1400 + (x % 2 === 0 ? -20 : 20), 0, color,
+        { driver: 'ai', ai: { axis: 'h', road: 1400, dir: 1, speed: 300 } });
+      rival.speed = 300;
+      rival.isRival = true;
+      state.cars.push(rival);
+    }
+    addTrafficCar(state, 1450, 1000, 0, '#e8a13c');
+    addTrafficCar(state, 400, 1800, Math.PI, '#5a5a5a');
+    addPeds(state, [[750, 1330], [900, 1470], [500, 1330]]);
+    state.toast = { text: 'Mara Voss: "Checkpoint 2/5 — floor it!"', timer: 4 };
     frameCamera(state);
     return { screen: 'play' };
   }
 
   if (name === 'mission') {
-    // Courier delivery at Dockside: the package, the marker, the timer.
-    state.cash = 350;
-    state.wanted = 0;
-    placePlayerCar(state, 620, 2000, Math.PI, 120);
-    setMission(state, 1, 'deliver', 45);
-    state.mission.target = { x: PLACES.dockside.x, y: PLACES.dockside.y, label: PLACES.dockside.name };
-    state.mission.objective = 'Deliver the package to Dockside before the timer ends';
-    state.pickups.push({ x: 460, y: 2000, kind: 'package', taken: false });
-    addPeds(state, [[520, 1940], [700, 2060], [420, 2080]]);
-    addTrafficCar(state, 900, 2200, Math.PI, '#5a5a5a');
-    const parked = createCar('parked', 830, 1800, 0, '#4a90d9', { driver: 'none' });
-    state.cars.push(parked);
+    // The Kingpin finale: five stars, two helis, and the run to the Old Foundry.
+    state.cash = 2400;
+    state.wanted = 5;
+    placePlayerCar(state, 2200, 2000, 0, 380);
+    setMission(state, 7, 'deliver', 45);
+    state.mission.objective = 'Five stars on you — deliver the package to the Old Foundry';
+    state.mission.target = { x: PLACES.foundry.x, y: PLACES.foundry.y, label: PLACES.foundry.name };
+    state.mission.timerMax = 120;
+    const heli1 = createHelicopter(2200, 1820, 0);
+    heli1.angle = Math.atan2(2000 - 1820, 2200 - 2200);
+    const heli2 = createHelicopter(2450, 2180, Math.PI);
+    heli2.angle = Math.atan2(2000 - 2180, 2200 - 2450);
+    state.helis.push(heli1, heli2);
+    addPoliceCar(state, 2020, 2000, 0, 430);
+    addPoliceCar(state, 2080, 2075, 0, 410);
+    addTrafficCar(state, 1500, 2000, 0, '#4a90d9');
+    addPeds(state, [[2400, 1940], [2550, 2060], [2300, 2080]]);
+    state.toast = { text: 'Mara Voss: "Last run, Kingpin. Bring it home!"', timer: 4 };
     frameCamera(state);
     return { screen: 'play' };
   }
 
-  // 'chase' (the cover): a 3-star police chase on the Strip.
+  // 'chase' (the cover): a 4-star police chase on the Strip, heli overhead.
   state.cash = 480;
-  state.wanted = 3;
+  state.wanted = 4;
   placePlayerCar(state, 1400, 1000, 0, 380);
-  setMission(state, 2, 'active', 88);
-  state.mission.objective = 'Lose your 3-star wanted level';
+  setMission(state, 6, 'survive', 88);
+  state.mission.objective = 'Survive 90 seconds with the police helicopter on you';
+  const heli = createHelicopter(1520, 880, 0);
+  heli.angle = Math.atan2(1000 - 880, 1400 - 1520);
+  state.helis.push(heli);
   addPoliceCar(state, 1230, 1000, 0, 430);
   addPoliceCar(state, 1300, 1075, 0, 410);
   state.police.push({ x: 1150, y: 940, angle: 0, speed: 250, hp: 40, holdTimer: 0 });
@@ -152,7 +179,7 @@ export function stageShot(name, state) {
   addTrafficCar(state, 1560, 1000, 0, '#e8a13c');
   addTrafficCar(state, 1180, 1400, Math.PI, '#7ab648');
   addPeds(state, [[1500, 940], [1350, 1120], [1700, 1120], [1250, 940]]);
-  state.toast = { text: 'Mara Voss: "Lose them — three stars and counting!"', timer: 4 };
+  state.toast = { text: 'Mara Voss: "Eyes in the sky — four stars and counting!"', timer: 4 };
   frameCamera(state);
   return { screen: 'play' };
 }

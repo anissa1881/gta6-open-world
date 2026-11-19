@@ -2,7 +2,7 @@
 // logical screen space (1280x720) after the renderer switches the transform:
 // health and cash top-left, wanted stars top-right, the objective across the
 // top, the clock and district bottom-left, and the minimap bottom-right.
-import { FONT, FOOD_TRUCK, PALETTE, PLACES, RANKS, STOREFRONTS, VIEW, WORLD } from './config.js';
+import { FONT, FOOD_TRUCK, PALETTE, PLACES, RANKS, ROAD, STOREFRONTS, VIEW, WORLD } from './config.js';
 import { currentTarget } from './missions.js';
 import { districtAt } from './city.js';
 import { daylight } from './daynight.js';
@@ -53,12 +53,23 @@ function drawMinimap(ctx, state, big) {
   ctx.beginPath();
   ctx.rect(x + 3, y + 3, w - 6, h - 6);
   ctx.clip();
-  // Water and roads.
+  // City blocks: a dark map bed, so the streets read as light roads on it.
+  ctx.fillStyle = '#232b33';
+  ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+  // Water on the east edge.
   ctx.fillStyle = PALETTE.water;
   ctx.fillRect(x + state.city.water.x * sx, y, state.city.water.w * sx, h);
-  ctx.fillStyle = 'rgba(220,220,220,0.5)';
-  for (const vx of state.city.lines.vertical) ctx.fillRect(x + vx * sx - 1, y, 2, h);
-  for (const hy of state.city.lines.horizontal) ctx.fillRect(x, y + hy * sy - 1, w, 2);
+  // The actual street network: each road drawn at its true width, light
+  // grey on the dark blocks, with a thin dark centre line down the middle
+  // so every street reads as a street, GTA-style.
+  const roadW = ROAD.width * sx;
+  const roadH = ROAD.width * sy;
+  ctx.fillStyle = '#aeb6bf';
+  for (const vx of state.city.lines.vertical) ctx.fillRect(x + vx * sx - roadW / 2, y, roadW, h);
+  for (const hy of state.city.lines.horizontal) ctx.fillRect(x, y + hy * sy - roadH / 2, w, roadH);
+  ctx.fillStyle = 'rgba(35,43,51,0.85)';
+  for (const vx of state.city.lines.vertical) ctx.fillRect(x + vx * sx - 0.75, y, 1.5, h);
+  for (const hy of state.city.lines.horizontal) ctx.fillRect(x, y + hy * sy - 0.75, w, 1.5);
   // Safehouse.
   ctx.fillStyle = '#2fae4e';
   ctx.fillRect(x + PLACES.safehouse.x * sx - 3, y + PLACES.safehouse.y * sy - 3, 6, 6);
@@ -109,6 +120,9 @@ function drawMinimap(ctx, state, big) {
   ctx.lineTo(-5, 5);
   ctx.closePath();
   ctx.fill();
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
   ctx.restore();
   ctx.restore();
   // North.

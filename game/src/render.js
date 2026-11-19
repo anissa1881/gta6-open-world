@@ -402,22 +402,36 @@ export function createRenderer(canvas) {
       context.rotate(Math.PI / 2);
       context.fillStyle = ped.color;
       context.beginPath();
-      context.arc(0, 0, 11, 0, Math.PI * 2);
+      context.arc(0, 0, 13, 0, Math.PI * 2);
       context.fill();
+      context.strokeStyle = 'rgba(20,20,20,0.6)';
+      context.lineWidth = 2;
+      context.stroke();
       context.restore();
       return;
     }
+    // Soft ground shadow, so the walker reads against any ground or road.
+    context.fillStyle = 'rgba(0,0,0,0.30)';
+    context.beginPath();
+    context.ellipse(0, 4, 14, 9, 0, 0, Math.PI * 2);
+    context.fill();
     context.rotate(ped.angle);
     context.fillStyle = ped.armed ? '#c0392b' : ped.color;
     context.beginPath();
-    context.arc(0, 0, 11, 0, Math.PI * 2);
+    context.arc(0, 0, 13, 0, Math.PI * 2);
     context.fill();
+    context.strokeStyle = 'rgba(20,20,20,0.65)';
+    context.lineWidth = 2;
+    context.stroke();
     context.fillStyle = '#e8b98a';
     context.beginPath();
-    context.arc(4, 0, 5, 0, Math.PI * 2);
+    context.arc(5, 0, 6, 0, Math.PI * 2);
     context.fill();
+    context.strokeStyle = 'rgba(20,20,20,0.5)';
+    context.lineWidth = 1;
+    context.stroke();
     context.fillStyle = '#222';
-    context.fillRect(8, -2, 8, 4);
+    context.fillRect(10, -2, 9, 4);
     context.restore();
   }
 

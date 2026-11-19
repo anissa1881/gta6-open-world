@@ -183,7 +183,7 @@ export const PALETTE = {
   playerCar: '#e84c3d',
   policeCar: '#2f6fd0',
   police: '#24344d',
-  ped: ['#e8e0d0', '#d0c0a0', '#a8c8d8', '#d8a8b0', '#b8d0a8'],
+  ped: ['#2f6fd0', '#f2c230', '#58c96b', '#ff7a2a', '#9b59b6', '#37e0ff', '#ff4fd8'],
   trafficCar: ['#4a90d9', '#d94a6a', '#e8e8e8', '#5a5a5a', '#7ab648', '#e8a13c'],
   marker: '#ffd23f',
   danger: '#e84c3d',

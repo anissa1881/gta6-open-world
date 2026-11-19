@@ -58,6 +58,23 @@ function addPeds(state, spots) {
   }
 }
 
+// A group of pedestrians crossing the road together, in vivid shirt colours
+// so they read as people at a glance: staged in the middle of the frame.
+const CROSS_COLORS = ['#f2c230', '#2f6fd0', '#ff7a2a', '#58c96b', '#ff4fd8', '#9b59b6'];
+
+function addCrossingGroup(state, spots) {
+  spots.forEach(([x, y], i) => {
+    const ped = makePed(state, x, y, false);
+    ped.state = 'walk';
+    ped.mode = 'cross';
+    ped.crossAxis = 'h';
+    ped.crossDir = 1;
+    ped.crossLeft = 120;
+    ped.color = CROSS_COLORS[i % CROSS_COLORS.length];
+    state.peds.push(ped);
+  });
+}
+
 function frameCamera(state) {
   const p = state.player;
   state.camera.x = clamp(p.x - VIEW.width / 2, 0, WORLD.width - VIEW.width);
@@ -112,7 +129,8 @@ export function stageShot(name, state) {
       [1520, 940], [1680, 940], [1450, 1120], [1750, 1120],
       [1380, 980], [1820, 980], [1560, 1180], [1700, 1180],
     ]);
-    // One pedestrian mid-crossing at the crosswalk by the lights.
+    // One pedestrian mid-crossing at the crosswalk by the lights, plus a
+    // whole group crossing the Strip intersection in the middle of the frame.
     const crosser = state.peds[0];
     crosser.mode = 'cross';
     crosser.crossAxis = 'h';
@@ -120,6 +138,9 @@ export function stageShot(name, state) {
     crosser.crossLeft = 90;
     crosser.x = 1420;
     crosser.y = 1000;
+    addCrossingGroup(state, [
+      [1540, 1000], [1570, 1012], [1600, 995], [1630, 1008], [1660, 1000],
+    ]);
     addTrafficCar(state, 1400, 1000, 0, '#4a90d9');
     addTrafficCar(state, 1850, 1000, Math.PI, '#e8a13c');
     addTrafficCar(state, 1400, 800, Math.PI / 2, '#7ab648');
@@ -153,7 +174,7 @@ export function stageShot(name, state) {
     addTrafficCar(state, 1450, 1000, 0, '#e8a13c');
     addTrafficCar(state, 400, 1800, Math.PI, '#5a5a5a');
     addTrafficCar(state, 900, 1000, 0, '#f2c230', 'taxi');
-    addPeds(state, [[750, 1330], [900, 1470], [500, 1330]]);
+    addPeds(state, [[750, 1330], [900, 1470], [500, 1330], [700, 1330], [850, 1470], [1000, 1330], [1150, 1470]]);
     state.toast = { text: 'Mara Voss: "Checkpoint 2/5 — floor it!"', timer: 4 };
     frameCamera(state);
     return { screen: 'play' };
@@ -179,7 +200,7 @@ export function stageShot(name, state) {
     addPoliceCar(state, 2080, 2075, 0, 410);
     addTrafficCar(state, 1500, 2000, 0, '#4a90d9');
     addTrafficCar(state, 1750, 2000, 0, '#8a7a5a', 'truck');
-    addPeds(state, [[2400, 1940], [2550, 2060], [2300, 2080]]);
+    addPeds(state, [[2400, 1940], [2550, 2060], [2300, 2080], [2350, 1940], [2500, 1940], [2450, 2080], [2250, 1940]]);
     state.toast = { text: 'Mara Voss: "Last run, Kingpin. Bring it home!"', timer: 4 };
     frameCamera(state);
     return { screen: 'play' };
@@ -231,7 +252,11 @@ export function stageShot(name, state) {
   addTrafficCar(state, 1180, 1400, Math.PI, '#7ab648');
   addTrafficCar(state, 1750, 1000, 0, '#2f8f7a', 'bus');
   addTrafficCar(state, 1050, 1400, 0, '#f2c230', 'taxi');
-  addPeds(state, [[1500, 940], [1350, 1120], [1700, 1120], [1250, 940]]);
+  addPeds(state, [[1500, 940], [1350, 1120], [1700, 1120], [1250, 940], [1450, 1120], [1550, 1120]]);
+  // A group crossing the Strip just west of the chase, in the middle of the frame.
+  addCrossingGroup(state, [
+    [1080, 1000], [1110, 1012], [1140, 995], [1170, 1008], [1200, 1000],
+  ]);
   state.toast = { text: 'Mara Voss: "Eyes in the sky — four stars and counting!"', timer: 4 };
   frameCamera(state);
   return { screen: 'play' };

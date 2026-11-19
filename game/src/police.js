@@ -48,8 +48,26 @@ export function updatePoliceSpawns(state) {
   const p = state.player;
   const wantCars = state.wanted === 0 ? 0 : Math.min(3, state.wanted);
   const wantOfficers = state.wanted >= 2 ? Math.min(2, state.wanted - 1) : 0;
+  if (state.wanted === 0) {
+    state.cars = state.cars.filter((c) => c.kind !== 'police' || c.health <= 0);
+    state.police.length = 0;
+    state.audio.siren(false);
+    if (state.warning && state.warning.kind === 'police') state.warning = null;
+    return;
+  }
   let cars = 0;
   for (const car of state.cars) if (car.kind === 'police' && car.health > 0) cars += 1;
+  // Arrival warning: the siren fades in and a banner shows 2.5 s BEFORE
+  // the patrol cars arrive, so the chase has a climax instead of just
+  // appearing. A fresh wave warns again, at most once every 8 seconds.
+  const warnActive = state.warning && state.warning.kind === 'police';
+  if (cars < wantCars && !warnActive && state.time - (state.lastPoliceWarn || -100) > 8) {
+    state.warning = { kind: 'police', text: '⚠ POLICE INCOMING', timer: 2.5 };
+    state.lastPoliceWarn = state.time;
+    state.audio.sirenWarmup();
+    return; // The patrol is on its way — not here yet.
+  }
+  if (warnActive) return; // The patrol is on its way — not here yet.
   while (cars < wantCars) {
     const spot = randomRoadPoint(state.city, state.rng);
     // Spawn off-screen but on a road, so the chase arrives instead of appearing.
@@ -85,13 +103,7 @@ export function updatePoliceSpawns(state) {
     officer.y = fixed.y;
     state.police.push(officer);
   }
-  if (state.wanted === 0) {
-    state.cars = state.cars.filter((c) => c.kind !== 'police' || c.health <= 0);
-    state.police.length = 0;
-    state.audio.siren(false);
-  } else {
-    state.audio.siren(true);
-  }
+  state.audio.siren(true);
 }
 
 export function updatePolice(state, dt) {
@@ -117,7 +129,9 @@ export function updatePolice(state, dt) {
       if (!p.onFoot && p.car) {
         // A police car ramming the player's car from behind: sparks, smoke,
         // a flash on the player's car and a jolt — the hit must be visible.
-        spawnCrashFx(state, p.car, car);
+        // A ram is a hard hit, so it is a climax: dent, cracked windshield,
+        // close-up and slow motion.
+        spawnCrashFx(state, p.car, car, true);
       } else {
         spawnSparks(state, car.x, car.y, 3);
         addShake(state, 7);

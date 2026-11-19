@@ -4,7 +4,7 @@
 import { CAR } from './config.js';
 import { angleDelta, clamp, distance } from './random.js';
 import { hitsSolid, resolveCircle } from './city.js';
-import { addShake } from './effects.js';
+import { addShake, startCinematic } from './effects.js';
 
 let nextId = 1;
 
@@ -25,6 +25,8 @@ export function createCar(kind, x, y, angle, color, options) {
     ai: opt.ai || null,
     smokeTimer: 0, dead: false, honkTimer: 0,
     flash: 0, lastCrashFx: -10,
+    // Crash damage that stays on the car: a dent and a cracked windshield.
+    dented: false, cracked: false,
   };
 }
 
@@ -58,6 +60,11 @@ export function updatePlayerCar(state, input, dt) {
       state.audio.crash();
       addShake(state, Math.min(10, Math.abs(car.speed) * 0.02));
       spawnSmoke(state, nx, ny, 6);
+      // A hard crash is a climax: close-up, slow motion, and the car
+      // keeps its dent and cracked windshield afterwards.
+      car.dented = true;
+      car.cracked = true;
+      startCinematic(state, nx, ny, 1.3);
     }
     car.speed *= -0.35;
   } else {
@@ -152,9 +159,11 @@ export function spawnSparks(state, x, y, count) {
 /**
  * A rear-end hit, made visible: sparks and a star burst at the contact
  * point, a smoke puff, a white flash on the hit car, a screen shake and a
- * jolt forward. Cooled down per car so a stuck pair does not strobe.
+ * jolt forward. Cooled down per car so a stuck pair does not strobe. A hard
+ * hit (closing speed over 200) is a climax: the hit car keeps a dent and a
+ * cracked windshield, and the camera pushes in close for a moment.
  */
-export function spawnCrashFx(state, hitCar, fromCar) {
+export function spawnCrashFx(state, hitCar, fromCar, hard) {
   if (state.time - (hitCar.lastCrashFx || -10) < 0.5) return;
   hitCar.lastCrashFx = state.time;
   // Contact point: between the two cars, at the hit car's rear bumper.
@@ -180,6 +189,11 @@ export function spawnCrashFx(state, hitCar, fromCar) {
   hitCar.speed = (hitCar.speed || 0) + 50;
   hitCar.x += Math.cos(hitCar.angle) * 6;
   hitCar.y += Math.sin(hitCar.angle) * 6;
+  if (hard) {
+    hitCar.dented = true;
+    hitCar.cracked = true;
+    startCinematic(state, cx, cy, 1.3);
+  }
 }
 
 /**
@@ -189,8 +203,8 @@ export function spawnCrashFx(state, hitCar, fromCar) {
  * with a few sparks on a hard knock.
  */
 export function handleCarCollision(state, a, b) {
-  const hard = collideCars(a, b);
-  if (!hard) return;
+  const closing = collideCars(a, b);
+  if (!closing) return;
   // Is b behind a (a was rear-ended by b)?
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -198,21 +212,21 @@ export function handleCarCollision(state, a, b) {
   const behindA = (dx / d) * Math.cos(a.angle) + (dy / d) * Math.sin(a.angle);
   const behindB = (-dx / d) * Math.cos(b.angle) + (-dy / d) * Math.sin(b.angle);
   if (behindA < -0.6 && b.speed > a.speed + 40) {
-    spawnCrashFx(state, a, b);
+    spawnCrashFx(state, a, b, closing > 200);
   } else if (behindB < -0.6 && a.speed > b.speed + 40) {
-    spawnCrashFx(state, b, a);
+    spawnCrashFx(state, b, a, closing > 200);
   } else {
     spawnSparks(state, (a.x + b.x) / 2, (a.y + b.y) / 2, 4);
   }
 }
 
-/** Push two cars apart when they overlap; returns true on a hard hit. */
+/** Push two cars apart when they overlap; returns the closing speed, or 0 when they do not touch hard. */
 export function collideCars(a, b) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const d = Math.hypot(dx, dy);
   const min = 46;
-  if (d >= min || d === 0) return false;
+  if (d >= min || d === 0) return 0;
   const push = (min - d) / 2;
   const nx = dx / d;
   const ny = dy / d;
@@ -221,7 +235,7 @@ export function collideCars(a, b) {
   b.x += nx * push;
   b.y += ny * push;
   const closing = Math.abs(a.speed - b.speed);
-  return closing > 120;
+  return closing > 120 ? closing : 0;
 }
 
 /** Steer a car toward a target point (used by police and the vigilante target). */

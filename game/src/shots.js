@@ -215,6 +215,11 @@ export function stageShot(name, state) {
   state.cash = 480;
   state.wanted = 4;
   placePlayerCar(state, 1400, 1000, 0, 380);
+  // The ram just landed: the player's car keeps its dent and cracked
+  // windshield, so the crash reads in the still frame.
+  state.player.car.dented = true;
+  state.player.car.cracked = true;
+  state.player.car.health = 45;
   setMission(state, 6, 'survive', 88);
   state.mission.objective = 'Survive 90 seconds with the police helicopter on you';
   const heli = createHelicopter(1520, 880, 0);

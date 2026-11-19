@@ -5,6 +5,7 @@ import { PALETTE, PEDS, ROAD, WANTED } from './config.js';
 import { distance, randomPick } from './random.js';
 import { randomSidewalkPoint } from './city.js';
 import { daylight } from './daynight.js';
+import { startCinematic } from './effects.js';
 
 export function createPedestrians(state) {
   const peds = [];
@@ -36,6 +37,9 @@ export function makePed(state, x, y, armed) {
     crossLeft: 0,
     crossAxis: 'h',
     crossDir: 1,
+    // Knocked down by a car: 'stumble' counts down, then they get up and flee.
+    stumbleTimer: 0,
+    lastHit: -10,
   };
 }
 
@@ -59,6 +63,15 @@ export function updatePedestrians(state, dt) {
   const p = state.player;
   for (const ped of state.peds) {
     if (ped.dead) continue;
+    if (ped.state === 'stumble') {
+      // Knocked down by a car: lying on the road, then up and running off.
+      ped.stumbleTimer -= dt;
+      if (ped.stumbleTimer <= 0) {
+        ped.state = 'flee';
+        ped.fleeTimer = 2;
+      }
+      continue;
+    }
     if (ped.state === 'attack') {
       // Armed crew: close in and shoot at the player.
       const d = distance(ped.x, ped.y, p.x, p.y);
@@ -165,4 +178,37 @@ export function damagePed(state, ped, amount, byPlayer) {
   ped.state = 'flee';
   ped.fleeTimer = 2;
   return false;
+}
+
+/**
+ * The player's car running a pedestrian down: a brief close-up, a thud, a
+ * dust burst, and the walker stumbles, gets up and runs off to the sidewalk.
+ * Cartoonish, no blood — they always get back up. Hitting one is a crime, so
+ * the wanted level rises. Only the player's car does this: traffic passes
+ * through pedestrians as before, so the streets never turn into a pile-up.
+ */
+export function checkCarHits(state) {
+  const car = state.player.onFoot ? null : state.player.car;
+  if (!car || car.health <= 0 || Math.abs(car.speed) < 80) return;
+  for (const ped of state.peds) {
+    if (ped.dead || ped.state === 'stumble' || ped.armed) continue;
+    if (state.time - (ped.lastHit || -10) < 2) continue;
+    if (distance(ped.x, ped.y, car.x, car.y) >= 26) continue;
+    ped.lastHit = state.time;
+    ped.state = 'stumble';
+    ped.stumbleTimer = 0.9;
+    ped.angle = Math.atan2(ped.y - car.y, ped.x - car.x);
+    for (let i = 0; i < 6; i += 1) {
+      state.particles.push({
+        x: ped.x + (state.rng() - 0.5) * 16, y: ped.y + (state.rng() - 0.5) * 16,
+        vx: (state.rng() - 0.5) * 50, vy: -20 - state.rng() * 30,
+        life: 0.5, maxLife: 0.5, size: 5 + state.rng() * 4,
+        color: 'rgba(190, 170, 130, 0.6)', kind: 'dust',
+      });
+    }
+    state.audio.thud();
+    startCinematic(state, ped.x, ped.y, 0.9);
+    state.wanted = Math.min(5, state.wanted + WANTED.hitPed);
+    state.heat = 0;
+  }
 }

@@ -33,15 +33,37 @@ export function heliSeesPlayer(state) {
 export function updateHelicopters(state, dt) {
   const want = wantedHelis(state.wanted);
   const p = state.player;
-  while (state.helis.length < want) {
-    const a = state.rng() * Math.PI * 2;
-    state.helis.push(createHelicopter(
-      p.x + Math.cos(a) * 500,
-      p.y + Math.sin(a) * 500,
-      state.helis.length * Math.PI,
-    ));
+  // Arrival warning: the rotor fades in and a banner shows before the heli
+  // arrives, with a spotlight sweeping the ground ahead of it. A fresh heli
+  // warns again, at most once every 10 seconds.
+  if (want > state.helis.length) {
+    const warn = state.warning;
+    if (warn && warn.kind === 'heli') {
+      // Warning showing: the heli is on its way, not here yet.
+    } else if (!warn && state.time - (state.lastHeliWarn || -100) > 10) {
+      state.warning = { kind: 'heli', text: '🚁 HELICOPTER INBOUND', timer: 2 };
+      state.lastHeliWarn = state.time;
+      const a = state.rng() * Math.PI * 2;
+      state.heliSweep = {
+        timer: 2, duration: 2,
+        x: p.x + Math.cos(a) * 520, y: p.y + Math.sin(a) * 520,
+      };
+      state.audio.rotorWarmup();
+    }
+  }
+  if (!state.warning) {
+    while (state.helis.length < want) {
+      const a = state.rng() * Math.PI * 2;
+      state.helis.push(createHelicopter(
+        p.x + Math.cos(a) * 500,
+        p.y + Math.sin(a) * 500,
+        state.helis.length * Math.PI,
+      ));
+    }
   }
   if (state.helis.length > want) state.helis.length = want;
+  // The rotor is heard while a heli is overhead — or on its way in.
+  state.audio.rotor(state.helis.length > 0 || (state.warning && state.warning.kind === 'heli'));
   for (const h of state.helis) {
     // Circle the player at a hover distance, drifting with a slow orbit.
     h.phase += dt * 0.35;

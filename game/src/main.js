@@ -12,7 +12,7 @@ import { ACTION_ATTACK, ACTION_CONFIRM, ACTION_ENTER, ACTION_MAP, ACTION_MUTE, A
 import { createPlayer, updatePlayerOnFoot, nearestCar, enterCar, exitCar } from './player.js';
 import { updatePlayerCar } from './vehicles.js';
 import { createTraffic, createParkedCars, updateTraffic } from './traffic.js';
-import { createPedestrians, updatePedestrians } from './pedestrians.js';
+import { createPedestrians, updatePedestrians, checkCarHits } from './pedestrians.js';
 import { updateWanted, updatePolice } from './police.js';
 import { updateHelicopters } from './helicopter.js';
 import { SIDE_SPOTS, startMission, startSideJob, updateMissions, updateSideJobs } from './missions.js';
@@ -50,6 +50,12 @@ function createState(seedValue) {
     camera: { x: 0, y: 0 }, zoom: 1, shake: null,
     missionComplete: null, ending: null,
     savedAtSafehouse: false,
+    // Cinematic moments and arrival warnings (round 7): a close-up + slow
+    // motion on a hard crash or a ped hit, and a banner + fading siren or
+    // rotor before the police or the heli arrive.
+    screen: 'title',
+    warning: null, cine: null, lastCine: -100,
+    lastPoliceWarn: -100, lastHeliWarn: -100, heliSweep: null,
     // The living city: weather that comes and goes, ten hidden Sunport
     // packages, and the passenger waiting at the taxi stand.
     weather: { kind: 'clear', intensity: 0, timer: 45 + rng() * 40 },
@@ -78,6 +84,18 @@ function createState(seedValue) {
  */
 function updateCamera(state) {
   const p = state.player;
+  // A cinematic moment: the camera pushes in close on the impact point.
+  if (state.cine) {
+    const targetZoom = 1.75;
+    state.zoom += (targetZoom - state.zoom) * 0.18;
+    const visibleW = VIEW.width / state.zoom;
+    const visibleH = VIEW.height / state.zoom;
+    const tx = clamp(state.cine.x - visibleW / 2, 0, WORLD.width - visibleW);
+    const ty = clamp(state.cine.y - visibleH / 2, 0, WORLD.height - visibleH);
+    state.camera.x += (tx - state.camera.x) * 0.18;
+    state.camera.y += (ty - state.camera.y) * 0.18;
+    return;
+  }
   const speed = p.onFoot ? 0 : Math.abs(p.car ? p.car.speed : 0);
   const targetZoom = p.onFoot ? 1.06 : (speed > 380 ? 0.92 : 1.0);
   state.zoom += (targetZoom - state.zoom) * 0.12;
@@ -192,6 +210,9 @@ function respawn(state) {
   state.police.length = 0;
   state.helis.length = 0;
   state.shake = null;
+  state.warning = null;
+  state.cine = null;
+  state.heliSweep = null;
   state.cars = state.cars.filter((c) => c.kind !== 'police');
   state.audio.siren(false);
   state.audio.engine(0);
@@ -269,6 +290,11 @@ function runGame() {
 
   function handleActions() {
     const actions = input.takeActions();
+    // A cinematic moment eats the input: any key skips it, nothing else happens.
+    if (state.cine) {
+      if (actions) state.cine = null;
+      return;
+    }
     if (actions & ACTION_MUTE) {
       const muted = !state.audio.isMuted();
       state.audio.setMuted(muted);
@@ -319,6 +345,15 @@ function runGame() {
     if (state.toast) {
       state.toast.timer -= STEP;
       if (state.toast.timer <= 0) state.toast = null;
+    }
+    // Arrival warnings and the heli spotlight sweep run on real time.
+    if (state.warning) {
+      state.warning.timer -= STEP;
+      if (state.warning.timer <= 0) state.warning = null;
+    }
+    if (state.heliSweep) {
+      state.heliSweep.timer -= STEP;
+      if (state.heliSweep.timer <= 0) state.heliSweep = null;
     }
     if (state.missionComplete) {
       state.missionComplete.timer -= STEP;
@@ -374,6 +409,7 @@ function runGame() {
 
     updateTraffic(state, STEP);
     updatePedestrians(state, STEP);
+    checkCarHits(state);
     updateWanted(state, STEP);
     updatePolice(state, STEP);
     updateHelicopters(state, STEP);
@@ -440,9 +476,16 @@ function runGame() {
 
   function frame(now) {
     requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
+    const dtReal = Math.min((now - last) / 1000, MAX_FRAME);
     last = now;
+    state.screen = screen;
+    // The cinematic clock runs in real time; the world runs in slow motion.
+    if (state.cine) {
+      state.cine.timer -= dtReal;
+      if (state.cine.timer <= 0) state.cine = null;
+    }
     handleActions();
+    accumulator += dtReal * (state.cine ? 0.4 : 1);
     while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
       step();
       accumulator -= STEP;

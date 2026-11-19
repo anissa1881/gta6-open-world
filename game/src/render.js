@@ -136,6 +136,24 @@ export function createRenderer(canvas) {
         context.fillRect(x, hy - 3, 34, 6);
       }
     }
+    // Zebra crossings: white stripes across each road just outside every
+    // intersection, where pedestrians cross. Never inside the intersection
+    // square itself — the crossing stays flat like the rest of the junction.
+    context.fillStyle = 'rgba(245, 245, 240, 0.9)';
+    for (const vx of city.lines.vertical) {
+      for (const hy of city.lines.horizontal) {
+        // Across the vertical road, north and south of the junction.
+        for (let sx = vx - half + 6; sx < vx + half - 6; sx += 16) {
+          context.fillRect(sx, hy - half - 32, 9, 24);
+          context.fillRect(sx, hy + half + 8, 9, 24);
+        }
+        // Across the horizontal road, west and east of the junction.
+        for (let sy = hy - half + 6; sy < hy + half - 6; sy += 16) {
+          context.fillRect(vx - half - 32, sy, 24, 9);
+          context.fillRect(vx + half + 8, sy, 24, 9);
+        }
+      }
+    }
     // Street lamps at every intersection: a faint dot by day, a real pool
     // of light at night, when the city needs them.
     const dark = daylight(state).darkness;
@@ -380,6 +398,38 @@ export function createRenderer(canvas) {
       context.fillStyle = 'rgba(0,0,0,0.2)';
       context.fillRect(-car.length / 2, -car.width / 2, car.length / 2, car.width);
     }
+    // Crash damage that stays on the car: a dented rear panel and a
+    // cracked windshield, so a hard hit is still visible afterwards.
+    if (car.dented) {
+      context.fillStyle = 'rgba(0,0,0,0.35)';
+      context.beginPath();
+      context.ellipse(-car.length / 2 + 8, 0, 9, 11, 0, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = 'rgba(0,0,0,0.25)';
+      context.beginPath();
+      context.ellipse(-car.length / 2 + 16, -car.width / 2 + 6, 6, 4, 0, 0, Math.PI * 2);
+      context.fill();
+    }
+    if (car.cracked) {
+      // A spiderweb of cracks across the windshield.
+      const wx = car.length / 2 - 14;
+      context.strokeStyle = 'rgba(255,255,255,0.85)';
+      context.lineWidth = 1.5;
+      context.beginPath();
+      context.moveTo(wx, 0);
+      context.lineTo(wx - 6, -8);
+      context.moveTo(wx, 0);
+      context.lineTo(wx + 6, -7);
+      context.moveTo(wx, 0);
+      context.lineTo(wx - 6, 8);
+      context.moveTo(wx, 0);
+      context.lineTo(wx + 6, 7);
+      context.moveTo(wx, 0);
+      context.lineTo(wx - 2, -11);
+      context.moveTo(wx, 0);
+      context.lineTo(wx + 2, 11);
+      context.stroke();
+    }
     // A fresh hit flashes white on the car, so a rear-end ram is visible.
     if (car.flash > 0) {
       context.globalAlpha = Math.min(0.55, car.flash * 2);
@@ -402,7 +452,7 @@ export function createRenderer(canvas) {
       context.rotate(Math.PI / 2);
       context.fillStyle = ped.color;
       context.beginPath();
-      context.arc(0, 0, 13, 0, Math.PI * 2);
+      context.arc(0, 0, 11, 0, Math.PI * 2);
       context.fill();
       context.strokeStyle = 'rgba(20,20,20,0.6)';
       context.lineWidth = 2;
@@ -410,28 +460,54 @@ export function createRenderer(canvas) {
       context.restore();
       return;
     }
+    if (ped.state === 'stumble') {
+      // Knocked down by a car: flat on the road, seeing stars, then up
+      // and running. Cartoonish, no blood — they always get back up.
+      context.rotate(Math.PI / 2);
+      context.fillStyle = ped.color;
+      context.beginPath();
+      context.arc(0, 0, 11, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = 'rgba(20,20,20,0.6)';
+      context.lineWidth = 2;
+      context.stroke();
+      context.fillStyle = '#e8b98a';
+      context.beginPath();
+      context.arc(12, 0, 5.5, 0, Math.PI * 2);
+      context.fill();
+      // Dizzy stars circling the head.
+      context.fillStyle = '#ffd23f';
+      for (let i = 0; i < 3; i += 1) {
+        const a = (i / 3) * Math.PI * 2 + (ped.stumbleTimer || 0) * 4;
+        context.beginPath();
+        context.arc(12 + Math.cos(a) * 10, Math.sin(a) * 10, 2.5, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+      return;
+    }
     // Soft ground shadow, so the walker reads against any ground or road.
     context.fillStyle = 'rgba(0,0,0,0.30)';
     context.beginPath();
-    context.ellipse(0, 4, 14, 9, 0, 0, Math.PI * 2);
+    context.ellipse(0, 4, 12, 8, 0, 0, Math.PI * 2);
     context.fill();
     context.rotate(ped.angle);
     context.fillStyle = ped.armed ? '#c0392b' : ped.color;
     context.beginPath();
-    context.arc(0, 0, 13, 0, Math.PI * 2);
+    context.arc(0, 0, 11, 0, Math.PI * 2);
     context.fill();
     context.strokeStyle = 'rgba(20,20,20,0.65)';
     context.lineWidth = 2;
     context.stroke();
     context.fillStyle = '#e8b98a';
     context.beginPath();
-    context.arc(5, 0, 6, 0, Math.PI * 2);
+    context.arc(5, 0, 5.5, 0, Math.PI * 2);
     context.fill();
     context.strokeStyle = 'rgba(20,20,20,0.5)';
     context.lineWidth = 1;
     context.stroke();
     context.fillStyle = '#222';
-    context.fillRect(10, -2, 9, 4);
+    context.fillRect(9, -2, 8, 4);
     context.restore();
   }
 
@@ -756,6 +832,18 @@ export function createRenderer(canvas) {
     }
     // Helicopters fly above the street, spotlights and all.
     for (const h of state.helis) drawHelicopter(state, h);
+    // A spotlight sweeping the ground ahead of an inbound helicopter:
+    // the warning that the eye in the sky is about to arrive.
+    if (state.heliSweep && state.heliSweep.timer > 0) {
+      const s = state.heliSweep;
+      const prog = 1 - s.timer / s.duration;
+      const sx = s.x + (state.player.x - s.x) * prog;
+      const sy = s.y + (state.player.y - s.y) * prog;
+      context.fillStyle = PALETTE.spotlight;
+      context.beginPath();
+      context.ellipse(sx, sy, 130, 90, 0, 0, Math.PI * 2);
+      context.fill();
+    }
     drawParticles(state);
     // The day/night wash over the whole frame: warm by day, dark blue at
     // night. Day and night must read differently at a glance.

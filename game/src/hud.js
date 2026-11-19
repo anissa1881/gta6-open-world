@@ -181,6 +181,31 @@ function drawHudPlay(ctx, state) {
     text(ctx, state.toast.text, VIEW.width / 2, 116, 20, PALETTE.marker, 'center');
     ctx.globalAlpha = 1;
   }
+  // Arrival warning: a banner with a flashing edge glow, shown while the
+  // siren or rotor fades in — before the police or the heli actually arrive.
+  if (state.warning && state.warning.timer > 0) {
+    const w = state.warning;
+    const flash = Math.floor(state.time * 6) % 2 === 0;
+    const glowA = (0.10 + 0.08 * Math.sin(state.time * 8)).toFixed(2);
+    if (w.kind === 'police') {
+      ctx.fillStyle = `rgba(255, 59, 48, ${glowA})`;
+      ctx.fillRect(0, 0, 26, VIEW.height);
+      ctx.fillStyle = `rgba(47, 111, 208, ${glowA})`;
+      ctx.fillRect(VIEW.width - 26, 0, 26, VIEW.height);
+    } else {
+      ctx.fillStyle = `rgba(255, 154, 60, ${glowA})`;
+      ctx.fillRect(0, 0, 26, VIEW.height);
+      ctx.fillRect(VIEW.width - 26, 0, 26, VIEW.height);
+    }
+    const bw = 480;
+    const bx = (VIEW.width - bw) / 2;
+    ctx.fillStyle = 'rgba(20, 26, 34, 0.92)';
+    ctx.fillRect(bx, 190, bw, 44);
+    ctx.strokeStyle = w.kind === 'police' ? (flash ? '#ff3b30' : '#2f6fd0') : '#ff9a3c';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(bx, 190, bw, 44);
+    text(ctx, w.text, VIEW.width / 2, 218, 20, '#ffffff', 'center');
+  }
   // Bottom-left: day/night icon, clock, district, speed. The sun by day,
   // the moon by night — the corner always says which half of the day it is.
   const day = daylight(state);

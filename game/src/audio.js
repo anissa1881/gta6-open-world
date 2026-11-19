@@ -8,6 +8,7 @@ export function createAudio() {
   let sirenNodes = null;
   let engineNodes = null;
   let rainNodes = null;
+  let rotorNodes = null;
 
   function ensure() {
     if (context) {
@@ -50,6 +51,9 @@ export function createAudio() {
     setMuted(value) {
       muted = value;
       if (muted) this.siren(false);
+      if (muted && rotorNodes) {
+        try { rotorNodes.gain.gain.setTargetAtTime(0, context.currentTime, 0.1); } catch { /* ignore */ }
+      }
       if (muted && rainNodes) {
         try { rainNodes.gain.gain.setTargetAtTime(0, context.currentTime, 0.1); } catch { /* ignore */ }
       }
@@ -59,6 +63,7 @@ export function createAudio() {
     pickup() { tone(880, 0.09, 'sine', 0.09); tone(1320, 0.12, 'sine', 0.07); },
     cash() { tone(1046, 0.1, 'triangle', 0.09); tone(1568, 0.16, 'triangle', 0.08); },
     punch() { tone(160, 0.08, 'sawtooth', 0.1, 70); },
+    thud() { tone(75, 0.18, 'sine', 0.18, 40); tone(50, 0.22, 'triangle', 0.1, 30); },
     gunshot() { tone(220, 0.1, 'sawtooth', 0.12, 55); tone(1200, 0.04, 'square', 0.05); },
     crash() { tone(90, 0.25, 'sawtooth', 0.14, 40); },
     missionSting() {
@@ -74,13 +79,19 @@ export function createAudio() {
       if (!ctx) return;
       if (!on) {
         if (sirenNodes) {
-          try { sirenNodes.osc.stop(); sirenNodes.gain.disconnect(); } catch { /* already stopped */ }
+          try { sirenNodes.osc.stop(); sirenNodes.lfo.stop(); sirenNodes.gain.disconnect(); } catch { /* already stopped */ }
           sirenNodes = null;
         }
         return;
       }
-      if (sirenNodes || muted) return;
+      if (muted) return;
       try {
+        if (sirenNodes) {
+          // A warm-up fade-in is still running: let it finish on its own.
+          if (sirenNodes.warmingUntil && ctx.currentTime < sirenNodes.warmingUntil) return;
+          sirenNodes.gain.gain.setTargetAtTime(0.028, ctx.currentTime, 0.2);
+          return;
+        }
         const osc = ctx.createOscillator();
         const lfo = ctx.createOscillator();
         const lfoGain = ctx.createGain();
@@ -100,6 +111,98 @@ export function createAudio() {
         sirenNodes = { osc, lfo, gain };
       } catch {
         sirenNodes = null;
+      }
+    },
+    /** Start the siren at a whisper and fade it in over ~2.5 s, so the chase is heard before it is seen. */
+    sirenWarmup() {
+      const ctx = ensure();
+      if (!ctx || muted || sirenNodes) return;
+      try {
+        const osc = ctx.createOscillator();
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = 850;
+        lfo.type = 'square';
+        lfo.frequency.value = 0.9;
+        lfoGain.gain.value = 220;
+        gain.gain.value = 0.0001;
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        lfo.start();
+        gain.gain.setTargetAtTime(0.028, ctx.currentTime, 0.9);
+        sirenNodes = { osc, lfo, gain, warmingUntil: ctx.currentTime + 2.8 };
+      } catch {
+        sirenNodes = null;
+      }
+    },
+    /** The helicopter rotor: a chopping low thump, on or off. */
+    rotor(on) {
+      const ctx = ensure();
+      if (!ctx) return;
+      if (!on) {
+        if (rotorNodes) {
+          try { rotorNodes.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.2); } catch { /* ignore */ }
+        }
+        return;
+      }
+      if (muted) return;
+      try {
+        if (rotorNodes) {
+          if (rotorNodes.warmingUntil && ctx.currentTime < rotorNodes.warmingUntil) return;
+          rotorNodes.gain.gain.setTargetAtTime(0.04, ctx.currentTime, 0.2);
+          return;
+        }
+        const osc = ctx.createOscillator();
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = 68;
+        lfo.type = 'square';
+        lfo.frequency.value = 9;
+        lfoGain.gain.value = 0.035;
+        gain.gain.value = 0.04;
+        lfo.connect(lfoGain);
+        lfoGain.connect(gain.gain);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        lfo.start();
+        rotorNodes = { osc, lfo, gain };
+      } catch {
+        rotorNodes = null;
+      }
+    },
+    /** Start the rotor at a whisper and fade it in, so the heli is heard before it is seen. */
+    rotorWarmup() {
+      const ctx = ensure();
+      if (!ctx || muted || rotorNodes) return;
+      try {
+        const osc = ctx.createOscillator();
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = 68;
+        lfo.type = 'square';
+        lfo.frequency.value = 9;
+        lfoGain.gain.value = 0.035;
+        gain.gain.value = 0.0001;
+        lfo.connect(lfoGain);
+        lfoGain.connect(gain.gain);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        lfo.start();
+        gain.gain.setTargetAtTime(0.04, ctx.currentTime, 0.9);
+        rotorNodes = { osc, lfo, gain, warmingUntil: ctx.currentTime + 2.8 };
+      } catch {
+        rotorNodes = null;
       }
     },
     /** A low engine hum whose pitch follows speed (0..1). Call with 0 to quiet it. */

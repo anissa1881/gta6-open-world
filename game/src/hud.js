@@ -1,0 +1,210 @@
+// The HUD and the minimap, and the menu panels. Everything here is drawn in
+// logical screen space (1280x720) after the renderer switches the transform:
+// health and cash top-left, wanted stars top-right, the objective across the
+// top, the clock and district bottom-left, and the minimap bottom-right.
+import { FONT, PALETTE, PLACES, VIEW, WORLD } from './config.js';
+import { currentTarget } from './missions.js';
+import { districtAt } from './city.js';
+import { hasSave } from './save.js';
+
+const fonts = new Map();
+function text(ctx, value, x, y, size, color, align) {
+  if (!fonts.has(size)) fonts.set(size, `${size}px ${FONT}`);
+  ctx.font = fonts.get(size);
+  ctx.fillStyle = color;
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(value, x, y);
+}
+
+function panel(ctx, x, y, w, h) {
+  ctx.fillStyle = PALETTE.panel;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = PALETTE.panelEdge;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, w, h);
+}
+
+function clockText(minutes) {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = Math.floor(minutes % 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function drawMinimap(ctx, state, big) {
+  const w = big ? 340 : 210;
+  const h = big ? 255 : 158;
+  const x = VIEW.width - w - 18;
+  const y = VIEW.height - h - 18;
+  const sx = w / WORLD.width;
+  const sy = h / WORLD.height;
+  panel(ctx, x, y, w, h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x + 3, y + 3, w - 6, h - 6);
+  ctx.clip();
+  // Water and roads.
+  ctx.fillStyle = PALETTE.water;
+  ctx.fillRect(x + state.city.water.x * sx, y, state.city.water.w * sx, h);
+  ctx.fillStyle = 'rgba(220,220,220,0.5)';
+  for (const vx of state.city.lines.vertical) ctx.fillRect(x + vx * sx - 1, y, 2, h);
+  for (const hy of state.city.lines.horizontal) ctx.fillRect(x, y + hy * sy - 1, w, 2);
+  // Safehouse.
+  ctx.fillStyle = '#2fae4e';
+  ctx.fillRect(x + PLACES.safehouse.x * sx - 3, y + PLACES.safehouse.y * sy - 3, 6, 6);
+  // Traffic as grey dots, police as red dots.
+  ctx.fillStyle = 'rgba(200,200,200,0.8)';
+  for (const car of state.cars) {
+    if (car.kind === 'police') continue;
+    ctx.fillRect(x + car.x * sx - 1, y + car.y * sy - 1, 2, 2);
+  }
+  ctx.fillStyle = '#ff3b30';
+  for (const car of state.cars) {
+    if (car.kind !== 'police') continue;
+    ctx.beginPath();
+    ctx.arc(x + car.x * sx, y + car.y * sy, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Objective target.
+  const target = currentTarget(state);
+  if (target) {
+    ctx.fillStyle = PALETTE.marker;
+    ctx.save();
+    ctx.translate(x + target.x * sx, y + target.y * sy);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-4, -4, 8, 8);
+    ctx.restore();
+  }
+  // The player arrow.
+  const p = state.player;
+  ctx.save();
+  ctx.translate(x + p.x * sx, y + p.y * sy);
+  ctx.rotate(p.angle);
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(7, 0);
+  ctx.lineTo(-5, -5);
+  ctx.lineTo(-5, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.restore();
+  // North.
+  text(ctx, 'N', x + w - 14, y + 20, 16, PALETTE.text, 'center');
+  text(ctx, 'SUNPORT CITY', x + 10, y + 18, 12, PALETTE.muted, 'left');
+}
+
+function drawHudPlay(ctx, state) {
+  const p = state.player;
+  // Top-left: health bar, cash, ammo.
+  panel(ctx, 16, 14, 250, 64);
+  text(ctx, 'HEALTH', 28, 36, 13, PALETTE.muted, 'left');
+  ctx.fillStyle = '#222';
+  ctx.fillRect(28, 44, 180, 12);
+  ctx.fillStyle = state.health > 30 ? PALETTE.health : PALETTE.healthLow;
+  ctx.fillRect(28, 44, 180 * Math.max(0, state.health / 100), 12);
+  text(ctx, `$${Math.floor(state.cash)}`, 220, 56, 20, PALETTE.cash, 'left');
+  if (p.onFoot) text(ctx, `AMMO ${p.ammo}`, 28, 72, 13, PALETTE.text, 'left');
+  // Top-right: wanted stars.
+  panel(ctx, VIEW.width - 266, 14, 250, 64);
+  text(ctx, state.wanted > 0 ? 'WANTED' : 'CLEAN', VIEW.width - 254, 36, 13, state.wanted > 0 ? '#ff6b5e' : PALETTE.muted, 'left');
+  for (let i = 0; i < 5; i += 1) {
+    text(ctx, '★', VIEW.width - 254 + i * 34, 66, 28, i < state.wanted ? PALETTE.star : PALETTE.starEmpty, 'left');
+  }
+  // Top-centre: the objective.
+  const m = state.mission;
+  const objective = state.side
+    ? `${state.side.title}: ${state.side.kind === 'packages' ? `${state.side.collected}/${state.side.total} packages` : 'follow the marker'}`
+    : (m ? `${m.title} — ${m.objective}` : '');
+  const timer = state.side && state.side.timer > 0 ? state.side.timer : (m && m.timer > 0 ? m.timer : 0);
+  if (objective) {
+    const w = 640;
+    panel(ctx, (VIEW.width - w) / 2, 14, w, 64);
+    text(ctx, objective, VIEW.width / 2, 40, 17, PALETTE.text, 'center');
+    if (timer > 0) {
+      text(ctx, `⏱ ${Math.ceil(timer)}s`, VIEW.width / 2, 66, 18, timer < 15 ? '#ff6b5e' : PALETTE.marker, 'center');
+    } else if (m && m.id === 'showdown') {
+      text(ctx, `Crew left: ${m.enemiesLeft}`, VIEW.width / 2, 66, 18, PALETTE.marker, 'center');
+    } else {
+      text(ctx, 'Follow the yellow marker', VIEW.width / 2, 66, 15, PALETTE.muted, 'center');
+    }
+  }
+  // Toast message under the banner.
+  if (state.toast && state.toast.timer > 0) {
+    ctx.globalAlpha = Math.min(1, state.toast.timer);
+    text(ctx, state.toast.text, VIEW.width / 2, 116, 20, PALETTE.marker, 'center');
+    ctx.globalAlpha = 1;
+  }
+  // Bottom-left: clock, district, speed.
+  text(ctx, `${clockText(state.clockMin)}  •  ${districtAt(p.x, p.y)}`, 24, VIEW.height - 20, 17, PALETTE.text, 'left');
+  if (!p.onFoot && p.car) {
+    const kmh = Math.round(Math.abs(p.car.speed) * 0.22);
+    text(ctx, `${kmh} km/h`, 24, VIEW.height - 48, 22, PALETTE.text, 'left');
+    if (p.car.health < 55) text(ctx, 'CAR DAMAGED', 24, VIEW.height - 74, 16, '#ff6b5e', 'left');
+  }
+  if (p.inSafehouse) {
+    text(ctx, 'SAFEHOUSE — game saved', VIEW.width / 2, VIEW.height - 190, 20, '#7ee081', 'center');
+  }
+  // Controls hint, first minute only, on a dark strip so it reads over any ground.
+  if (state.time < 45) {
+    ctx.fillStyle = 'rgba(20, 26, 34, 0.75)';
+    ctx.fillRect(VIEW.width / 2 - 330, VIEW.height - 216, 660, 30);
+    text(ctx, 'WASD move/drive • E enter car • F punch/shoot • Space handbrake • M map • Esc pause', VIEW.width / 2, VIEW.height - 194, 15, 'rgba(244,239,226,0.95)', 'center');
+  }
+  drawMinimap(ctx, state, state.mapBig);
+}
+
+function drawTitle(ctx, state) {
+  panel(ctx, 240, 120, 800, 480);
+  text(ctx, 'SUNPORT CITY', 640, 200, 64, PALETTE.panelEdge, 'center');
+  text(ctx, 'An original open-world crime game', 640, 240, 22, PALETTE.text, 'center');
+  text(ctx, 'New in town, $150 in your pocket, and a call from fixer Mara Voss.', 640, 282, 19, PALETTE.muted, 'center');
+  text(ctx, 'Steal cars. Outrun the Sunport PD. Run her jobs. Own the city.', 640, 310, 19, PALETTE.muted, 'center');
+  const lines = [
+    'WASD / arrows — walk and drive    •    E — enter / exit car',
+    'F — punch / shoot (aim with mouse)    •    Space — handbrake',
+    'Shift — run    •    M — bigger map    •    N — mute    •    Esc — pause',
+    'Reach your safehouse in Palm Heights to save your game.',
+  ];
+  lines.forEach((line, i) => text(ctx, line, 640, 360 + i * 28, 17, PALETTE.text, 'center'));
+  text(ctx, 'Press Enter or click to start', 640, 520, 24, PALETTE.panelEdge, 'center');
+  if (hasSave()) text(ctx, 'Press C to continue your saved game', 640, 552, 18, PALETTE.cash, 'center');
+  if (state.storyDone) text(ctx, 'Story complete — free roam unlocked', 640, 580, 16, PALETTE.cash, 'center');
+}
+
+function drawPaused(ctx) {
+  panel(ctx, 390, 260, 500, 200);
+  text(ctx, 'PAUSED', 640, 330, 44, PALETTE.text, 'center');
+  text(ctx, 'Press Esc or P to keep playing', 640, 380, 19, PALETTE.muted, 'center');
+  text(ctx, 'Your progress saves at the safehouse', 640, 412, 17, PALETTE.muted, 'center');
+}
+
+function drawEnd(ctx, state, kind) {
+  panel(ctx, 340, 230, 600, 260);
+  if (kind === 'busted') {
+    text(ctx, 'BUSTED', 640, 310, 52, '#7aa8ff', 'center');
+    text(ctx, 'The Sunport PD caught you. Mara Voss posts your bail —', 640, 356, 18, PALETTE.text, 'center');
+    text(ctx, 'but the heat, and your cash, take a hit.', 640, 384, 18, PALETTE.text, 'center');
+  } else {
+    text(ctx, 'WASTED', 640, 310, 52, '#ff6b5e', 'center');
+    text(ctx, 'Sunport City is not kind to the careless.', 640, 356, 18, PALETTE.text, 'center');
+    text(ctx, 'You wake up at the clinic, lighter in the pocket.', 640, 384, 18, PALETTE.text, 'center');
+  }
+  text(ctx, `Cash $${Math.floor(state.cash)}  •  Missions done ${state.stats.missionsDone}`, 640, 428, 18, PALETTE.muted, 'center');
+  text(ctx, 'Press Enter to get back out there', 640, 462, 22, PALETTE.panelEdge, 'center');
+}
+
+/** Draw the HUD (and the panel for the current screen) in screen space. */
+export function drawHud(ctx, state, screen) {
+  if (screen === 'title') {
+    drawTitle(ctx, state);
+    return;
+  }
+  drawHudPlay(ctx, state);
+  if (screen === 'paused') drawPaused(ctx);
+  else if (screen === 'busted') drawEnd(ctx, state, 'busted');
+  else if (screen === 'wasted') drawEnd(ctx, state, 'wasted');
+  if (state.storyDone && screen === 'play') {
+    text(ctx, '★ STORY COMPLETE — SUNPORT IS YOURS ★', VIEW.width / 2, 150, 18, PALETTE.panelEdge, 'center');
+  }
+}

@@ -51,6 +51,35 @@ export function createRenderer(canvas) {
     context.closePath();
   }
 
+  /** A stable per-building number from its position, for rooftop details. */
+  function roofHash(b) {
+    let h = (b.x * 374761393 + b.y * 668265263 + b.w * 974634211 + b.h * 1274126177) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return (h ^ (h >>> 16)) >>> 0;
+  }
+
+  /** A rooftop AC unit: a pale box with a dark fan dot. */
+  function roofAC(x, y) {
+    context.fillStyle = '#c8c4b8';
+    context.fillRect(x, y, 18, 13);
+    context.fillStyle = '#5a5a60';
+    context.beginPath();
+    context.arc(x + 9, y + 6, 4, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  /** A small rooftop vent: a dark pipe with a lighter rim. */
+  function roofVent(x, y) {
+    context.fillStyle = '#8a8578';
+    context.beginPath();
+    context.arc(x, y, 7, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#4a463e';
+    context.beginPath();
+    context.arc(x, y, 4, 0, Math.PI * 2);
+    context.fill();
+  }
+
   function drawGround(state) {
     const city = state.city;
     // District ground tints.
@@ -66,27 +95,43 @@ export function createRenderer(canvas) {
     // Beach strip.
     context.fillStyle = PALETTE.sand;
     context.fillRect(city.water.x - 26, 0, 26, WORLD.height);
-    // Roads: sidewalk border, then asphalt, then centre dashes.
+    // Roads: vertical roads run full-length (the spine); horizontal roads
+    // are drawn only between vertical roads, so an intersection is one
+    // flat asphalt square — no sidewalk band or lane line crossing it.
+    // The old full-length strips made intersections read as two stacked
+    // roads, and the crossing dashes piled up on each other.
+    const half = ROAD.width / 2;
+    const sw = half + 10;
     for (const vx of city.lines.vertical) {
       context.fillStyle = PALETTE.sidewalk;
-      context.fillRect(vx - ROAD.width / 2 - 10, 0, ROAD.width + 20, WORLD.height);
+      context.fillRect(vx - sw, 0, ROAD.width + 20, WORLD.height);
       context.fillStyle = PALETTE.road;
-      context.fillRect(vx - ROAD.width / 2, 0, ROAD.width, WORLD.height);
+      context.fillRect(vx - half, 0, ROAD.width, WORLD.height);
     }
+    const edges = [0, ...city.lines.vertical, WORLD.width];
     for (const hy of city.lines.horizontal) {
-      context.fillStyle = PALETTE.sidewalk;
-      context.fillRect(0, hy - ROAD.width / 2 - 10, WORLD.width, ROAD.width + 20);
-      context.fillStyle = PALETTE.road;
-      context.fillRect(0, hy - ROAD.width / 2, WORLD.width, ROAD.width);
+      for (let i = 0; i < edges.length - 1; i += 1) {
+        const x0 = edges[i] === 0 ? 0 : edges[i] + half;
+        const x1 = edges[i + 1] === WORLD.width ? WORLD.width : edges[i + 1] - half;
+        if (x1 - x0 < 8) continue;
+        context.fillStyle = PALETTE.sidewalk;
+        context.fillRect(x0, hy - sw, x1 - x0, ROAD.width + 20);
+        context.fillStyle = PALETTE.road;
+        context.fillRect(x0, hy - half, x1 - x0, ROAD.width);
+      }
     }
+    // Centre dashes: one shared 64 px pattern per road, but a dash never
+    // enters an intersection, so dashes from crossing roads never overlap.
     context.fillStyle = PALETTE.roadLine;
     for (const vx of city.lines.vertical) {
       for (let y = 0; y < WORLD.height; y += 64) {
+        if (city.lines.horizontal.some((hy) => y + 34 > hy - half - 4 && y < hy + half + 4)) continue;
         context.fillRect(vx - 3, y, 6, 34);
       }
     }
     for (const hy of city.lines.horizontal) {
       for (let x = 0; x < WORLD.width; x += 64) {
+        if (city.lines.vertical.some((vx) => x + 34 > vx - half - 4 && x < vx + half + 4)) continue;
         context.fillRect(x, hy - 3, 34, 6);
       }
     }
@@ -141,12 +186,48 @@ export function createRenderer(canvas) {
       context.strokeStyle = PALETTE.buildingEdge;
       context.lineWidth = 2;
       context.strokeRect(b.x, b.y, b.w, b.h);
-      if (b.height >= 2) {
-        context.fillStyle = 'rgba(0,0,0,0.15)';
-        for (let wy = b.y + 22; wy < b.y + b.h - 12; wy += 24) {
-          for (let wx = b.x + 14; wx < b.x + b.w - 12; wx += 26) {
-            context.fillRect(wx, wy, 10, 12);
-          }
+      // Rooftops, seen from above: a parapet edge and rooftop kit (AC units,
+      // vents, skylights, a water tank or a garden) — never windows. The old
+      // window grid on the top face made the buildings read as if their
+      // windows faced the sky; from above you only ever see a roof.
+      context.strokeStyle = 'rgba(0,0,0,0.30)';
+      context.lineWidth = 3;
+      context.strokeRect(b.x + 5, b.y + 5, b.w - 10, b.h - 10);
+      if (b.w > 70 && b.h > 60) {
+        const rh = roofHash(b);
+        const kind = b.height >= 3 ? 2 : rh % 4;
+        const ix = b.x + 14;
+        const iy = b.y + 16;
+        if (kind === 0) {
+          roofAC(ix + 6, iy + 6);
+          roofAC(ix + b.w - 42, iy + 10);
+          if (b.w > 140) roofAC(ix + Math.floor(b.w / 2) - 9, iy + b.h - 36);
+        } else if (kind === 1) {
+          context.fillStyle = 'rgba(190, 220, 235, 0.85)';
+          context.fillRect(ix + 8, iy + 8, 26, 18);
+          context.fillRect(ix + b.w - 48, iy + b.h - 36, 26, 18);
+          roofVent(ix + Math.floor(b.w / 2), iy + Math.floor(b.h / 2));
+        } else if (kind === 2) {
+          context.fillStyle = '#4a4a52';
+          context.beginPath();
+          context.arc(ix + 22, iy + 22, 13, 0, Math.PI * 2);
+          context.fill();
+          context.fillStyle = 'rgba(255,255,255,0.35)';
+          context.beginPath();
+          context.arc(ix + 18, iy + 18, 4, 0, Math.PI * 2);
+          context.fill();
+          roofAC(ix + b.w - 44, iy + b.h - 38);
+        } else {
+          context.fillStyle = 'rgba(93, 138, 74, 0.75)';
+          context.fillRect(ix + 8, iy + 8, Math.max(30, b.w - 44), 20);
+          context.fillStyle = 'rgba(71, 107, 57, 0.8)';
+          context.beginPath();
+          context.arc(ix + 22, iy + 18, 6, 0, Math.PI * 2);
+          context.fill();
+          context.beginPath();
+          context.arc(ix + 48, iy + 18, 5, 0, Math.PI * 2);
+          context.fill();
+          roofVent(ix + b.w - 28, iy + b.h - 28);
         }
       }
     }
@@ -200,6 +281,18 @@ export function createRenderer(canvas) {
     } else if (car.health < 55) {
       context.fillStyle = 'rgba(0,0,0,0.2)';
       context.fillRect(-car.length / 2, -car.width / 2, car.length / 2, car.width);
+    }
+    // A fresh hit flashes white on the car, so a rear-end ram is visible.
+    if (car.flash > 0) {
+      context.globalAlpha = Math.min(0.55, car.flash * 2);
+      context.fillStyle = '#ffffff';
+      roundRect(-car.length / 2, -car.width / 2, car.length, car.width, 8);
+      context.fill();
+      context.globalAlpha = 1;
+      context.strokeStyle = '#ff5a3c';
+      context.lineWidth = 2;
+      roundRect(-car.length / 2, -car.width / 2, car.length, car.width, 8);
+      context.stroke();
     }
     context.restore();
   }
@@ -317,6 +410,23 @@ export function createRenderer(canvas) {
     for (const pt of state.particles) {
       const alpha = Math.max(0, pt.life / pt.maxLife);
       context.globalAlpha = alpha;
+      if (pt.kind === 'star') {
+        // A 4-point impact star: bright, so a crash reads in a still frame.
+        context.strokeStyle = pt.color;
+        context.lineWidth = 3;
+        const s = pt.size;
+        context.beginPath();
+        context.moveTo(pt.x - s, pt.y);
+        context.lineTo(pt.x + s, pt.y);
+        context.moveTo(pt.x, pt.y - s);
+        context.lineTo(pt.x, pt.y + s);
+        context.stroke();
+        context.fillStyle = pt.color;
+        context.beginPath();
+        context.arc(pt.x, pt.y, s * 0.35, 0, Math.PI * 2);
+        context.fill();
+        continue;
+      }
       context.fillStyle = pt.color;
       context.beginPath();
       context.arc(pt.x, pt.y, pt.size * (pt.kind === 'smoke' ? 1 + (1 - alpha) : 1), 0, Math.PI * 2);

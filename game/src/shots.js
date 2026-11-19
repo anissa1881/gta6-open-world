@@ -164,6 +164,8 @@ export function stageShot(name, state) {
   }
 
   // 'chase' (the cover): a 4-star police chase on the Strip, heli overhead.
+  // A police car rams the player's car from behind: bumpers touching,
+  // sparks and smoke at the contact point, flash on the player's car.
   state.cash = 480;
   state.wanted = 4;
   placePlayerCar(state, 1400, 1000, 0, 380);
@@ -172,9 +174,33 @@ export function stageShot(name, state) {
   const heli = createHelicopter(1520, 880, 0);
   heli.angle = Math.atan2(1000 - 880, 1400 - 1520);
   state.helis.push(heli);
-  addPoliceCar(state, 1230, 1000, 0, 430);
+  const rammer = addPoliceCar(state, 1336, 1000, 0, 430);
   addPoliceCar(state, 1300, 1075, 0, 410);
   state.police.push({ x: 1150, y: 940, angle: 0, speed: 250, hp: 40, holdTimer: 0 });
+  const cx = state.player.car.x - 32; // the player's rear bumper
+  const cy = state.player.car.y;
+  state.player.car.flash = 0.3;
+  rammer.flash = 0.15;
+  for (let i = 0; i < 10; i += 1) {
+    const a = (i / 10) * Math.PI * 2;
+    state.particles.push({
+      x: cx, y: cy, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160,
+      life: 0.3, maxLife: 0.3, size: 3, color: '#ffd23f', kind: 'spark',
+    });
+  }
+  for (const [ox, oy] of [[-8, -6], [6, 4], [0, 8]]) {
+    state.particles.push({
+      x: cx + ox, y: cy + oy, vx: 0, vy: 0,
+      life: 0.45, maxLife: 0.45, size: 8, color: '#fff3a0', kind: 'star',
+    });
+  }
+  for (let i = 0; i < 5; i += 1) {
+    state.particles.push({
+      x: cx - 10 + i * 6, y: cy - 8 + (i % 2) * 12,
+      vx: 0, vy: -20, life: 0.9, maxLife: 0.9, size: 9,
+      color: 'rgba(120,120,120,0.55)', kind: 'smoke',
+    });
+  }
   addTrafficCar(state, 1620, 1000, 0, '#4a90d9');
   addTrafficCar(state, 1560, 1000, 0, '#e8a13c');
   addTrafficCar(state, 1180, 1400, Math.PI, '#7ab648');

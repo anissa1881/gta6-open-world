@@ -294,6 +294,10 @@ function runGame() {
       state.shake.timer -= STEP;
       if (state.shake.timer <= 0) state.shake = null;
     }
+    // Hit flashes fade out over a few frames.
+    for (const car of state.cars) {
+      if (car.flash > 0) car.flash = Math.max(0, car.flash - STEP);
+    }
     if (screen === SCREEN_TITLE) {
       // The title screen shows the living city, camera drifting over the Strip.
       updateTraffic(state, STEP);

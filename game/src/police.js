@@ -4,7 +4,7 @@
 // player is Busted. A police helicopter overhead keeps the player spotted.
 import { PALETTE, POLICE, WANTED } from './config.js';
 import { clamp, distance } from './random.js';
-import { createCar, steerToward, damageCar, spawnSparks } from './vehicles.js';
+import { createCar, steerToward, damageCar, spawnSparks, spawnCrashFx } from './vehicles.js';
 import { damagePlayer } from './player.js';
 import { nearestRoad, randomRoadPoint, resolveCircle } from './city.js';
 import { heliSeesPlayer } from './helicopter.js';
@@ -114,9 +114,15 @@ export function updatePolice(state, dt) {
           state.toast = { text: 'Your car is wrecked! Get out and run!', timer: 3 };
         }
       }
-      spawnSparks(state, car.x, car.y, 3);
+      if (!p.onFoot && p.car) {
+        // A police car ramming the player's car from behind: sparks, smoke,
+        // a flash on the player's car and a jolt — the hit must be visible.
+        spawnCrashFx(state, p.car, car);
+      } else {
+        spawnSparks(state, car.x, car.y, 3);
+        addShake(state, 7);
+      }
       state.audio.crash();
-      addShake(state, 7);
       car.speed *= 0.4;
       // Back off a little so the ram does not stick every frame.
       car.x -= Math.cos(car.angle) * 30;

@@ -19,6 +19,7 @@ export function createCar(kind, x, y, angle, color, options) {
     driver: opt.driver || (kind === 'traffic' ? 'ai' : 'none'),
     ai: opt.ai || null,
     smokeTimer: 0, dead: false, honkTimer: 0,
+    flash: 0, lastCrashFx: -10,
   };
 }
 
@@ -140,6 +141,63 @@ export function spawnSparks(state, x, y, count) {
       life: 0.3, maxLife: 0.3, size: 3,
       color: '#ffd23f', kind: 'spark',
     });
+  }
+}
+
+/**
+ * A rear-end hit, made visible: sparks and a star burst at the contact
+ * point, a smoke puff, a white flash on the hit car, a screen shake and a
+ * jolt forward. Cooled down per car so a stuck pair does not strobe.
+ */
+export function spawnCrashFx(state, hitCar, fromCar) {
+  if (state.time - (hitCar.lastCrashFx || -10) < 0.5) return;
+  hitCar.lastCrashFx = state.time;
+  // Contact point: between the two cars, at the hit car's rear bumper.
+  const rearX = hitCar.x - Math.cos(hitCar.angle) * (hitCar.length / 2);
+  const rearY = hitCar.y - Math.sin(hitCar.angle) * (hitCar.length / 2);
+  const cx = (rearX + fromCar.x) / 2;
+  const cy = (rearY + fromCar.y) / 2;
+  spawnSparks(state, cx, cy, 12);
+  for (let i = 0; i < 3; i += 1) {
+    const a = state.rng() * Math.PI * 2;
+    state.particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
+      life: 0.45, maxLife: 0.45, size: 6 + state.rng() * 4,
+      color: '#fff3a0', kind: 'star',
+    });
+  }
+  spawnSmoke(state, cx, cy, 6);
+  hitCar.flash = 0.3;
+  fromCar.flash = 0.15;
+  addShake(state, 8);
+  // Jolt: the hit car is shoved forward in the direction it faces.
+  hitCar.speed = (hitCar.speed || 0) + 50;
+  hitCar.x += Math.cos(hitCar.angle) * 6;
+  hitCar.y += Math.sin(hitCar.angle) * 6;
+}
+
+/**
+ * Car-on-car contact with a visible rear-end effect: when one car runs
+ * into the back of another, the struck car gets sparks, smoke, a flash and
+ * a jolt. Side and head-on contact just pushes the cars apart, as before,
+ * with a few sparks on a hard knock.
+ */
+export function handleCarCollision(state, a, b) {
+  const hard = collideCars(a, b);
+  if (!hard) return;
+  // Is b behind a (a was rear-ended by b)?
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const behindA = (dx / d) * Math.cos(a.angle) + (dy / d) * Math.sin(a.angle);
+  const behindB = (-dx / d) * Math.cos(b.angle) + (-dy / d) * Math.sin(b.angle);
+  if (behindA < -0.6 && b.speed > a.speed + 40) {
+    spawnCrashFx(state, a, b);
+  } else if (behindB < -0.6 && a.speed > b.speed + 40) {
+    spawnCrashFx(state, b, a);
+  } else {
+    spawnSparks(state, (a.x + b.x) / 2, (a.y + b.y) / 2, 4);
   }
 }
 

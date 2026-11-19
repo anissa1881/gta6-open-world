@@ -3,7 +3,7 @@
 // background life — and the cars the player steals.
 import { PALETTE, TRAFFIC } from './config.js';
 import { randomPick } from './random.js';
-import { collideCars, createCar, updateCarSmoke } from './vehicles.js';
+import { handleCarCollision, createCar, updateCarSmoke } from './vehicles.js';
 
 export function createTraffic(state) {
   const cars = [];
@@ -99,10 +99,11 @@ export function updateTraffic(state, dt) {
     updateCarSmoke(state, car, dt);
   }
   // Keep traffic from stacking on top of itself at intersections.
+  // A rear-end between two traffic cars now shows the crash effect.
   const moving = state.cars.filter((c) => c.kind === 'traffic' && c.health > 0);
   for (let i = 0; i < moving.length; i += 1) {
     for (let j = i + 1; j < moving.length; j += 1) {
-      collideCars(moving[i], moving[j]);
+      handleCarCollision(state, moving[i], moving[j]);
     }
   }
 }

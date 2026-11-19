@@ -39,8 +39,8 @@ export const CAR = {
   enterRange: 70,
 };
 
-export const TRAFFIC = { count: 22, speed: 150, speedJitter: 45, minGap: 90 };
-export const PEDS = { count: 30, walkSpeed: 55, fleeSpeed: 170 };
+export const TRAFFIC = { count: 30, speed: 150, speedJitter: 45, minGap: 90 };
+export const PEDS = { count: 46, walkSpeed: 55, fleeSpeed: 170 };
 export const POLICE = { carSpeed: 560, footSpeed: 250, ramDamage: 9, catchSeconds: 1.2 };
 
 /** The police helicopter: speed, how close it hovers, and its spotlight reach. */
@@ -204,9 +204,29 @@ export const PALETTE = {
   wetSheen: 'rgba(255, 255, 255, 0.10)',
   skid: 'rgba(20, 20, 20, 0.35)',
   fire: '#ff7a2a',
+  /** Night: a dark blue wash over the whole frame (alpha set by the clock). */
+  nightTint: 'rgba(8, 14, 40, 0.42)',
+  rainStreak: 'rgba(200, 220, 255, 0.35)',
+  rainSplash: 'rgba(200, 220, 255, 0.30)',
+  headlight: 'rgba(255, 240, 170, 0.28)',
+  neon: ['#ff4fd8', '#37e0ff', '#ff9a3c', '#7dff5e'],
 };
 
 export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+
+/** Sidewalk storefronts you can walk up to and buy from (E): name, price, health. */
+export const STOREFRONTS = [
+  { name: 'TACOS', x: 1500, y: 1055, color: '#e84c3d', price: 10, health: 15 },
+  { name: '24H MART', x: 1700, y: 1455, color: '#4a90d9', price: 10, health: 15 },
+  { name: 'NOODLE BAR', x: 1100, y: 1455, color: '#e8a13c', price: 15, health: 25 },
+];
+
+/** The food truck parked by Central Plaza: stand near it on foot to eat for free. */
+export const FOOD_TRUCK = { x: 1500, y: 1455, name: 'FOOD TRUCK' };
+
+/** Ten hidden Sunport packages scattered on sidewalks; all ten pay a $500 bonus. */
+export const SUNPORT_PACKAGES = 10;
+export const PACKAGE_BONUS = 500;
 
 /** Where a saved game is kept between visits (this browser only). */
 export const SAVE_KEY = 'sunport-city.save.v1';

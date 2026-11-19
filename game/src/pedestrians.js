@@ -1,9 +1,10 @@
 // Pedestrians: people walking the sidewalks, fleeing from danger, and — when the
 // story needs them — armed crew members who shoot back. A pedestrian is a small
 // walker with a state: 'walk', 'flee', 'attack' or 'dead'.
-import { PALETTE, PEDS, WANTED } from './config.js';
+import { PALETTE, PEDS, ROAD, WANTED } from './config.js';
 import { distance, randomPick } from './random.js';
 import { randomSidewalkPoint } from './city.js';
+import { daylight } from './daynight.js';
 
 export function createPedestrians(state) {
   const peds = [];
@@ -28,6 +29,13 @@ export function makePed(state, x, y, armed) {
     dead: false,
     walkAxis: state.rng() < 0.5 ? 'v' : 'h',
     walkDir: state.rng() < 0.5 ? -1 : 1,
+    // Street life: 'stroll' along a sidewalk, 'wait' at a corner, 'cross'
+    // over a road at a crosswalk. Crossings make the city read as alive.
+    mode: 'stroll',
+    waitTimer: 0,
+    crossLeft: 0,
+    crossAxis: 'h',
+    crossDir: 1,
   };
 }
 
@@ -36,6 +44,11 @@ function dangerNear(state, ped) {
   const p = state.player;
   if (!p.onFoot && p.car && Math.abs(p.car.speed) > 200
     && distance(ped.x, ped.y, p.x, p.y) < 220) return { x: p.x, y: p.y };
+  // Any fast car — a speeding taxi, a bus, a patrol car — scatters people.
+  for (const car of state.cars) {
+    if (car.kind === 'traffic' && Math.abs(car.speed) > 240
+      && distance(ped.x, ped.y, car.x, car.y) < 180) return { x: car.x, y: car.y };
+  }
   for (const b of state.bullets) {
     if (distance(ped.x, ped.y, b.x, b.y) < 160) return { x: b.x, y: b.y };
   }
@@ -77,15 +90,50 @@ export function updatePedestrians(state, dt) {
       ped.y += Math.sin(away) * PEDS.fleeSpeed * dt;
       if (ped.fleeTimer <= 0) ped.state = 'walk';
     } else {
-      // Stroll along the sidewalk; turn at intersections sometimes.
-      if (ped.walkAxis === 'v') ped.y += ped.walkDir * ped.speed * dt;
-      else ped.x += ped.walkDir * ped.speed * dt;
-      ped.angle = ped.walkAxis === 'v'
-        ? (ped.walkDir > 0 ? Math.PI / 2 : -Math.PI / 2)
-        : (ped.walkDir > 0 ? 0 : Math.PI);
-      if (state.rng() < 0.002) {
-        ped.walkAxis = ped.walkAxis === 'v' ? 'h' : 'v';
-        ped.walkDir = state.rng() < 0.5 ? -1 : 1;
+      // Late at night the streets are quieter: people stroll more slowly.
+      const nightSlow = daylight(state).isNight ? 0.7 : 1;
+      const speed = ped.speed * nightSlow;
+      if (ped.mode === 'wait') {
+        // Standing at a corner, waiting to cross.
+        ped.waitTimer -= dt;
+        if (ped.waitTimer <= 0) {
+          ped.mode = 'cross';
+          ped.crossLeft = ROAD.width + 40;
+          ped.crossAxis = ped.walkAxis === 'v' ? 'h' : 'v';
+          ped.crossDir = state.rng() < 0.5 ? -1 : 1;
+        }
+      } else if (ped.mode === 'cross') {
+        // Crossing the road at a crosswalk, a little faster than a stroll.
+        const step = speed * 1.3 * dt;
+        if (ped.crossAxis === 'v') ped.y += ped.crossDir * step;
+        else ped.x += ped.crossDir * step;
+        ped.angle = ped.crossAxis === 'v'
+          ? (ped.crossDir > 0 ? Math.PI / 2 : -Math.PI / 2)
+          : (ped.crossDir > 0 ? 0 : Math.PI);
+        ped.crossLeft -= step;
+        if (ped.crossLeft <= 0) {
+          ped.mode = 'stroll';
+          ped.walkAxis = ped.crossAxis;
+          ped.walkDir = ped.crossDir;
+        }
+      } else {
+        // Stroll along the sidewalk; turn at intersections sometimes.
+        if (ped.walkAxis === 'v') ped.y += ped.walkDir * speed * dt;
+        else ped.x += ped.walkDir * speed * dt;
+        ped.angle = ped.walkAxis === 'v'
+          ? (ped.walkDir > 0 ? Math.PI / 2 : -Math.PI / 2)
+          : (ped.walkDir > 0 ? 0 : Math.PI);
+        if (state.rng() < 0.002) {
+          ped.walkAxis = ped.walkAxis === 'v' ? 'h' : 'v';
+          ped.walkDir = state.rng() < 0.5 ? -1 : 1;
+        }
+        // Near a corner, sometimes stop and wait to cross the road.
+        const nearCorner = state.city.lines.vertical.some((vx) => Math.abs(ped.x - vx) < 110)
+          && state.city.lines.horizontal.some((hy) => Math.abs(ped.y - hy) < 110);
+        if (nearCorner && state.rng() < 0.0025) {
+          ped.mode = 'wait';
+          ped.waitTimer = 1 + state.rng() * 2.5;
+        }
       }
       if (ped.x < 60 || ped.x > state.city.width - 180 || ped.y < 60 || ped.y > state.city.height - 60) {
         ped.walkDir *= -1;

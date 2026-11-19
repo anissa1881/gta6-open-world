@@ -10,7 +10,7 @@ import { randomRoadPoint } from './city.js';
 import { saveGame } from './save.js';
 
 export const SIDE_SPOTS = [
-  { kind: 'taxi', x: 1600, y: 1400, label: 'Taxi Stand — Central Plaza' },
+  { kind: 'taxi', x: 1600, y: 1455, label: 'Taxi Stand — Central Plaza' },
   { kind: 'packages', x: 2600, y: 2000, label: 'Package Depot — Old Foundry' },
   { kind: 'vigilante', x: 1600, y: 1000, label: 'Vigilante Call — Sunport Strip' },
 ];
@@ -290,6 +290,8 @@ export function startSideJob(state, kind) {
     }
     const dest = randomPick(state.rng, [PLACES.marina, PLACES.strip, PLACES.foundry, PLACES.safehouse]);
     state.side = { kind, title: SIDE_JOBS.taxi.title, reward: SIDE_JOBS.taxi.reward, target: { x: dest.x, y: dest.y, label: dest.name }, timer: 75, timerMax: 75, collected: 0 };
+    // The waiting passenger gets in; the stand empties until the next fare.
+    state.taxiPassenger = null;
     setToast(state, 'Taxi fare! Drive the passenger to the marker.');
     return true;
   }
@@ -326,6 +328,8 @@ export function updateSideJobs(state, dt) {
     if (s.timer <= 0) {
       setToast(state, `${s.title} failed — out of time.`);
       if (s.kind === 'vigilante' && s.targetCar) s.targetCar.isTarget = false;
+      // A new passenger shows up at the stand after a while.
+      if (s.kind === 'taxi') state.taxiPassenger = { x: SIDE_SPOTS[0].x, y: SIDE_SPOTS[0].y };
       state.side = null;
       return;
     }
@@ -337,6 +341,7 @@ export function updateSideJobs(state, dt) {
       state.audio.cash();
       setToast(state, `Taxi fare complete! +$${s.reward}`);
       saveGame(state);
+      state.taxiPassenger = { x: SIDE_SPOTS[0].x, y: SIDE_SPOTS[0].y };
       state.side = null;
     }
     return;

@@ -10,11 +10,16 @@ let nextId = 1;
 
 export function createCar(kind, x, y, angle, color, options) {
   const opt = options || {};
+  // Body: 'sedan' (default), 'bus', 'taxi' or 'truck' — different sizes.
+  const body = opt.body || 'sedan';
+  const size = body === 'bus' ? { length: 96, width: 34 }
+    : body === 'truck' ? { length: 84, width: 34 }
+    : { length: CAR.length, width: CAR.width };
   return {
     id: nextId += 1,
     kind, // 'player' | 'traffic' | 'police' | 'parked'
     x, y, angle, speed: 0,
-    length: CAR.length, width: CAR.width,
+    length: size.length, width: size.width, body,
     color, health: CAR.health,
     driver: opt.driver || (kind === 'traffic' ? 'ai' : 'none'),
     ai: opt.ai || null,

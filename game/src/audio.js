@@ -7,6 +7,7 @@ export function createAudio() {
   let muted = false;
   let sirenNodes = null;
   let engineNodes = null;
+  let rainNodes = null;
 
   function ensure() {
     if (context) {
@@ -49,6 +50,9 @@ export function createAudio() {
     setMuted(value) {
       muted = value;
       if (muted) this.siren(false);
+      if (muted && rainNodes) {
+        try { rainNodes.gain.gain.setTargetAtTime(0, context.currentTime, 0.1); } catch { /* ignore */ }
+      }
     },
     isMuted() { return muted; },
     click() { tone(660, 0.06, 'square', 0.05); },
@@ -122,6 +126,36 @@ export function createAudio() {
         }
         engineNodes.osc.frequency.setTargetAtTime(55 + speed01 * 130, ctx.currentTime, 0.08);
         engineNodes.gain.gain.setTargetAtTime(0.03 + speed01 * 0.03, ctx.currentTime, 0.1);
+      } catch {
+        // ignore
+      }
+    },
+    /** Soft rain noise (a looped, low-passed noise buffer), on or off. */
+    rain(on) {
+      const ctx = ensure();
+      if (!ctx) return;
+      try {
+        if (!rainNodes) {
+          const len = ctx.sampleRate * 2;
+          const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < len; i += 1) data[i] = Math.random() * 2 - 1;
+          const src = ctx.createBufferSource();
+          src.buffer = buffer;
+          src.loop = true;
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = 900;
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          src.connect(filter);
+          filter.connect(gain);
+          gain.connect(ctx.destination);
+          src.start();
+          rainNodes = { gain };
+        }
+        const target = on && !muted ? 0.035 : 0;
+        rainNodes.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.4);
       } catch {
         // ignore
       }

@@ -5,9 +5,9 @@
 // ?seed=N fixes the city. ?shot=chase|downtown|drive|mission (with &seed=N) stages
 // that scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot.
-import { CAR, MISSIONS, PLACES, STEP, VIEW, WORLD } from './config.js';
+import { CAR, FOOD_TRUCK, MISSIONS, PACKAGE_BONUS, PLACES, STEP, STOREFRONTS, SUNPORT_PACKAGES, VIEW, WORLD } from './config.js';
 import { createRandom, clamp, distance } from './random.js';
-import { createCity, inSafehouse } from './city.js';
+import { createCity, inSafehouse, randomSidewalkPoint } from './city.js';
 import { ACTION_ATTACK, ACTION_CONFIRM, ACTION_ENTER, ACTION_MAP, ACTION_MUTE, ACTION_PAUSE, ACTION_RADIO, createInput } from './input.js';
 import { createPlayer, updatePlayerOnFoot, nearestCar, enterCar, exitCar } from './player.js';
 import { updatePlayerCar } from './vehicles.js';
@@ -50,11 +50,22 @@ function createState(seedValue) {
     camera: { x: 0, y: 0 }, zoom: 1, shake: null,
     missionComplete: null, ending: null,
     savedAtSafehouse: false,
+    // The living city: weather that comes and goes, ten hidden Sunport
+    // packages, and the passenger waiting at the taxi stand.
+    weather: { kind: 'clear', intensity: 0, timer: 45 + rng() * 40 },
+    lightning: 0,
+    sunportPackages: [],
+    taxiPassenger: { x: SIDE_SPOTS[0].x, y: SIDE_SPOTS[0].y },
+    nearFood: false,
   };
   state.city = createCity(rng);
   state.player = createPlayer(300, 200);
   state.cars = [...createParkedCars(state), ...createTraffic(state)];
   state.peds = createPedestrians(state);
+  for (let i = 0; i < SUNPORT_PACKAGES; i += 1) {
+    const spot = randomSidewalkPoint(state.city, rng);
+    state.sunportPackages.push({ x: spot.x, y: spot.y, taken: false });
+  }
   startMission(state, 0);
   updateCamera(state);
   return state;
@@ -111,6 +122,15 @@ function punchTargetNear(state) {
 function tryEnter(state) {
   const p = state.player;
   if (!p.onFoot) {
+    // A taxi fare starts from the car: drive up to the stand and press E.
+    // (On foot, E only enters a car — the fare needs a car to drive.)
+    if (!state.side) {
+      for (const spot of SIDE_SPOTS) {
+        if (spot.kind === 'taxi' && distance(p.x, p.y, spot.x, spot.y) < 95) {
+          if (startSideJob(state, spot.kind)) return;
+        }
+      }
+    }
     exitCar(state);
     state.audio.click();
     return;
@@ -120,6 +140,20 @@ function tryEnter(state) {
       if (distance(p.x, p.y, spot.x, spot.y) < 95) {
         if (startSideJob(state, spot.kind)) return;
       }
+    }
+  }
+  // Buy a snack at a storefront: a little cash for a little health.
+  for (const shop of STOREFRONTS) {
+    if (distance(p.x, p.y, shop.x, shop.y) < 70) {
+      if (state.cash >= shop.price) {
+        state.cash -= shop.price;
+        state.health = Math.min(100, state.health + shop.health);
+        state.toast = { text: `${shop.name}! +${shop.health} health — $${shop.price}`, timer: 3 };
+        state.audio.cash();
+      } else {
+        state.toast = { text: `Not enough cash for ${shop.name} ($${shop.price}).`, timer: 3 };
+      }
+      return;
     }
   }
   const car = nearestCar(state, CAR.enterRange);
@@ -298,6 +332,26 @@ function runGame() {
     for (const car of state.cars) {
       if (car.flash > 0) car.flash = Math.max(0, car.flash - STEP);
     }
+    // Weather comes and goes: clear skies, then a rain shower, then clear.
+    // A storm at night sometimes throws a lightning flash.
+    const w = state.weather;
+    w.timer -= STEP;
+    if (w.timer <= 0) {
+      if (w.kind === 'clear') {
+        w.kind = state.rng() < 0.35 ? 'rain' : 'clear';
+        w.intensity = 0.5 + state.rng() * 0.5;
+        w.timer = 40 + state.rng() * 50;
+      } else {
+        w.kind = 'clear';
+        w.intensity = 0;
+        w.timer = 40 + state.rng() * 60;
+      }
+    }
+    if (w.kind === 'rain' && state.clockMin >= 1260) {
+      if (state.rng() < 0.002) state.lightning = 0.18;
+    }
+    if (state.lightning > 0) state.lightning = Math.max(0, state.lightning - STEP);
+    state.audio.rain(w.kind === 'rain');
     if (screen === SCREEN_TITLE) {
       // The title screen shows the living city, camera drifting over the Strip.
       updateTraffic(state, STEP);
@@ -335,6 +389,27 @@ function runGame() {
         pk.taken = true;
         state.audio.pickup();
       }
+    }
+    // Sunport packages: ten hidden parcels; all ten pay a $500 bonus.
+    let got = 0;
+    for (const pk of state.sunportPackages) {
+      if (!pk.taken && distance(p.x, p.y, pk.x, pk.y) < 34) {
+        pk.taken = true;
+        state.audio.pickup();
+      }
+      if (pk.taken) got += 1;
+    }
+    if (got >= SUNPORT_PACKAGES && !state.packageBonusPaid) {
+      state.packageBonusPaid = true;
+      state.cash += PACKAGE_BONUS;
+      state.stats.earned += PACKAGE_BONUS;
+      state.audio.cash();
+      state.toast = { text: `All ${SUNPORT_PACKAGES} Sunport packages! +$${PACKAGE_BONUS}`, timer: 4 };
+    }
+    // The food truck: stand near it on foot and eat, health comes back.
+    state.nearFood = p.onFoot && distance(p.x, p.y, FOOD_TRUCK.x, FOOD_TRUCK.y) < 70;
+    if (state.nearFood && state.health < 100) {
+      state.health = Math.min(100, state.health + 6 * STEP);
     }
     // Health comes back slowly when the heat is off.
     if (state.wanted === 0 && state.health < 100) state.health = Math.min(100, state.health + 2 * STEP);

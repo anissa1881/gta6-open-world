@@ -69,7 +69,16 @@ export function createCity(random) {
 
   const water = { x: WORLD.width - 120, y: 0, w: 120, h: WORLD.height };
 
-  return { lines, buildings, trees, parkedSpots, water, width: WORLD.width, height: WORLD.height };
+  // Traffic lights at the four central intersections (Strip × Plaza).
+  // Each has a phase offset so they do not all change at once.
+  const trafficLights = [];
+  for (const vx of [1400, 1800]) {
+    for (const hy of [1000, 1400]) {
+      trafficLights.push({ x: vx, y: hy, offset: (vx + hy) / 400 });
+    }
+  }
+
+  return { lines, buildings, trees, parkedSpots, water, trafficLights, width: WORLD.width, height: WORLD.height };
 }
 
 /** The district a point is in, by name. */

@@ -8,7 +8,7 @@ import { createCar } from './vehicles.js';
 import { makePed } from './pedestrians.js';
 import { clamp } from './random.js';
 import { createHelicopter } from './helicopter.js';
-import { RACE_CHECKPOINTS } from './missions.js';
+import { RACE_CHECKPOINTS, SIDE_SPOTS } from './missions.js';
 
 function setMission(state, index, stage, timer) {
   const def = MISSIONS[index];
@@ -36,8 +36,8 @@ function placePlayerCar(state, x, y, angle, speed) {
   return car;
 }
 
-function addTrafficCar(state, x, y, angle, color) {
-  const car = createCar('traffic', x, y, angle, color, { driver: 'ai', ai: { axis: 'h', road: y, dir: 1, speed: 150 } });
+function addTrafficCar(state, x, y, angle, color, body) {
+  const car = createCar('traffic', x, y, angle, color, { driver: 'ai', body: body || 'sedan', ai: { axis: 'h', road: y, dir: 1, speed: 150 } });
   car.speed = 150;
   state.cars.push(car);
   return car;
@@ -86,29 +86,45 @@ export function stageShot(name, state) {
   state.toast = null;
   state.time = 14;
   state.clockMin = 10 * 60 + 24;
+  state.weather = { kind: 'clear', intensity: 0, timer: 60 };
+  state.lightning = 0;
+  state.taxiPassenger = { x: SIDE_SPOTS[0].x, y: SIDE_SPOTS[0].y };
+  state.nearFood = false;
   state.health = 100;
   state.mapBig = false;
   state.busted = false;
   state.wasted = false;
 
   if (name === 'downtown') {
-    // On foot downtown: pedestrians, traffic, the Strip all around.
+    // On foot downtown, early morning: pedestrians, traffic, the Strip all
+    // around. Long building shadows, rooftop lift/stair boxes, a pedestrian
+    // crossing at the lights, and the taxi passenger waiting at the stand.
+    state.clockMin = 8 * 60;
     state.cash = 150;
     state.wanted = 0;
     state.player.onFoot = true;
     state.player.car = null;
     state.player.x = 1600;
-    state.player.y = 1060;
+    state.player.y = 1120;
     state.player.angle = -Math.PI / 2;
     setMission(state, 0, 'active', 0);
     addPeds(state, [
       [1520, 940], [1680, 940], [1450, 1120], [1750, 1120],
       [1380, 980], [1820, 980], [1560, 1180], [1700, 1180],
     ]);
+    // One pedestrian mid-crossing at the crosswalk by the lights.
+    const crosser = state.peds[0];
+    crosser.mode = 'cross';
+    crosser.crossAxis = 'h';
+    crosser.crossDir = 1;
+    crosser.crossLeft = 90;
+    crosser.x = 1420;
+    crosser.y = 1000;
     addTrafficCar(state, 1400, 1000, 0, '#4a90d9');
     addTrafficCar(state, 1850, 1000, Math.PI, '#e8a13c');
     addTrafficCar(state, 1400, 800, Math.PI / 2, '#7ab648');
     addTrafficCar(state, 1500, 1400, 0, '#d94a6a');
+    addTrafficCar(state, 1700, 1400, 0, '#2f8f7a', 'bus');
     const parked = createCar('parked', 1420, 1060, 0, '#e8e8e8', { driver: 'none' });
     state.cars.push(parked);
     frameCamera(state);
@@ -116,7 +132,9 @@ export function stageShot(name, state) {
   }
 
   if (name === 'drive') {
-    // Strip Sprint: racing the Strip, checkpoint 2 of 5, rivals ahead.
+    // Strip Sprint at night: racing the Strip under the lamps and neon,
+    // headlights on, the moon in the corner of the screen.
+    state.clockMin = 22 * 60 + 10;
     state.cash = 1200;
     state.wanted = 2;
     placePlayerCar(state, 600, 1400, 0, 460);
@@ -134,6 +152,7 @@ export function stageShot(name, state) {
     }
     addTrafficCar(state, 1450, 1000, 0, '#e8a13c');
     addTrafficCar(state, 400, 1800, Math.PI, '#5a5a5a');
+    addTrafficCar(state, 900, 1000, 0, '#f2c230', 'taxi');
     addPeds(state, [[750, 1330], [900, 1470], [500, 1330]]);
     state.toast = { text: 'Mara Voss: "Checkpoint 2/5 — floor it!"', timer: 4 };
     frameCamera(state);
@@ -141,7 +160,9 @@ export function stageShot(name, state) {
   }
 
   if (name === 'mission') {
-    // The Kingpin finale: five stars, two helis, and the run to the Old Foundry.
+    // The Kingpin finale at night: five stars, two helis, lamps and
+    // headlights, and the run to the Old Foundry.
+    state.clockMin = 21 * 60 + 40;
     state.cash = 2400;
     state.wanted = 5;
     placePlayerCar(state, 2200, 2000, 0, 380);
@@ -157,15 +178,19 @@ export function stageShot(name, state) {
     addPoliceCar(state, 2020, 2000, 0, 430);
     addPoliceCar(state, 2080, 2075, 0, 410);
     addTrafficCar(state, 1500, 2000, 0, '#4a90d9');
+    addTrafficCar(state, 1750, 2000, 0, '#8a7a5a', 'truck');
     addPeds(state, [[2400, 1940], [2550, 2060], [2300, 2080]]);
     state.toast = { text: 'Mara Voss: "Last run, Kingpin. Bring it home!"', timer: 4 };
     frameCamera(state);
     return { screen: 'play' };
   }
 
-  // 'chase' (the cover): a 4-star police chase on the Strip, heli overhead.
-  // A police car rams the player's car from behind: bumpers touching,
+  // 'chase' (the cover): a 4-star police chase on the Strip at dusk, in the
+  // rain — long shadows, wet roads, headlights, the heli overhead, and a
+  // police car ramming the player's car from behind: bumpers touching,
   // sparks and smoke at the contact point, flash on the player's car.
+  state.clockMin = 17 * 60 + 45;
+  state.weather = { kind: 'rain', intensity: 0.8, timer: 60 };
   state.cash = 480;
   state.wanted = 4;
   placePlayerCar(state, 1400, 1000, 0, 380);
@@ -204,6 +229,8 @@ export function stageShot(name, state) {
   addTrafficCar(state, 1620, 1000, 0, '#4a90d9');
   addTrafficCar(state, 1560, 1000, 0, '#e8a13c');
   addTrafficCar(state, 1180, 1400, Math.PI, '#7ab648');
+  addTrafficCar(state, 1750, 1000, 0, '#2f8f7a', 'bus');
+  addTrafficCar(state, 1050, 1400, 0, '#f2c230', 'taxi');
   addPeds(state, [[1500, 940], [1350, 1120], [1700, 1120], [1250, 940]]);
   state.toast = { text: 'Mara Voss: "Eyes in the sky — four stars and counting!"', timer: 4 };
   frameCamera(state);

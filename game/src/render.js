@@ -2,10 +2,11 @@
 // window of the 3200x2400 city, scaled to fit the browser window. Flat shapes and
 // canvas text — no images, no network. The HUD lives in hud.js; this file paints
 // the city, the cars, the people and the effects.
-import { DISTRICTS, FONT, HELI, PALETTE, PLACES, ROAD, VIEW, WORLD } from './config.js';
+import { DISTRICTS, FONT, FOOD_TRUCK, HELI, PALETTE, PLACES, ROAD, STOREFRONTS, VIEW, WORLD } from './config.js';
 import { currentTarget } from './missions.js';
 import { SIDE_SPOTS } from './missions.js';
 import { inSafehouse } from './city.js';
+import { daylight, lightPhase } from './daynight.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
@@ -135,12 +136,16 @@ export function createRenderer(canvas) {
         context.fillRect(x, hy - 3, 34, 6);
       }
     }
-    // Golden hour: street lamps glow at every intersection.
+    // Street lamps at every intersection: a faint dot by day, a real pool
+    // of light at night, when the city needs them.
+    const dark = daylight(state).darkness;
+    const lampR = 26 + dark * 34;
+    const lampA = 0.10 + dark * 0.35;
     for (const vx of city.lines.vertical) {
       for (const hy of city.lines.horizontal) {
-        context.fillStyle = PALETTE.lampGlow;
+        context.fillStyle = `rgba(255, 214, 120, ${lampA.toFixed(2)})`;
         context.beginPath();
-        context.arc(vx + ROAD.width / 2 + 8, hy - ROAD.width / 2 - 8, 30, 0, Math.PI * 2);
+        context.arc(vx + ROAD.width / 2 + 8, hy - ROAD.width / 2 - 8, lampR, 0, Math.PI * 2);
         context.fill();
         context.fillStyle = '#ffe9a8';
         context.beginPath();
@@ -161,8 +166,28 @@ export function createRenderer(canvas) {
         context.fillRect(vx - 10, y, 4, 56);
       }
     }
-    // Sun glints on the water.
-    context.fillStyle = 'rgba(255, 244, 200, 0.35)';
+    // Rain: the roads go dark and glossy, with pale glints along the lanes.
+    if (state.weather && state.weather.kind === 'rain') {
+      context.fillStyle = 'rgba(10, 20, 40, 0.16)';
+      for (const vx of city.lines.vertical) context.fillRect(vx - half, 0, ROAD.width, WORLD.height);
+      for (const hy of city.lines.horizontal) {
+        for (let i = 0; i < edges.length - 1; i += 1) {
+          const x0 = edges[i] === 0 ? 0 : edges[i] + half;
+          const x1 = edges[i + 1] === WORLD.width ? WORLD.width : edges[i + 1] - half;
+          if (x1 - x0 < 8) continue;
+          context.fillRect(x0, hy - half, x1 - x0, ROAD.width);
+        }
+      }
+      context.fillStyle = 'rgba(255, 255, 255, 0.14)';
+      for (const vx of city.lines.vertical) {
+        for (let y = 60; y < WORLD.height; y += 260) {
+          context.fillRect(vx - 24, y, 48, 3);
+          context.fillRect(vx + 8, y + 120, 30, 2);
+        }
+      }
+    }
+    // Sun glints on the water — only while the sun is up.
+    context.fillStyle = `rgba(255, 244, 200, ${(0.35 * (1 - daylight(state).darkness)).toFixed(2)})`;
     for (let y = 90; y < WORLD.height; y += 130) {
       context.fillRect(city.water.x + 34, y, 52, 3);
       context.fillRect(city.water.x + 58, y + 58, 30, 3);
@@ -175,10 +200,16 @@ export function createRenderer(canvas) {
   }
 
   function drawBuildings(state) {
+    const light = daylight(state);
+    const sh = light.shadow;
     for (const b of state.city.buildings) {
-      // Long golden-hour shadow, then roof, then a darker top edge for height.
-      context.fillStyle = 'rgba(0,0,0,0.22)';
-      context.fillRect(b.x + 16, b.y + 20, b.w, b.h);
+      // The sun throws the shadow: long and slanted morning and evening,
+      // short at noon — and at night there is no shadow at all, because
+      // there is no sun. That is the whole day/night trick in one rect.
+      if (sh.len > 0) {
+        context.fillStyle = 'rgba(0,0,0,0.22)';
+        context.fillRect(b.x + sh.dx, b.y + sh.dy, b.w, b.h);
+      }
       context.fillStyle = b.color;
       context.fillRect(b.x, b.y, b.w, b.h);
       context.fillStyle = 'rgba(255,255,255,0.18)';
@@ -229,13 +260,61 @@ export function createRenderer(canvas) {
           context.fill();
           roofVent(ix + b.w - 28, iy + b.h - 28);
         }
+        // The little room on the roof: a lift machine room on tall
+        // buildings, a stair bulkhead on small ones. In a screenshot it
+        // reads as one small box — the detail that says "this is a roof".
+        if (b.height >= 3) {
+          const bx = b.x + Math.floor(b.w / 2) - 11;
+          const by = b.y + Math.floor(b.h / 2) - 9;
+          context.fillStyle = '#6a6a72';
+          context.fillRect(bx - 4, by - 4, 30, 24);
+          context.fillStyle = 'rgba(255,255,255,0.25)';
+          context.fillRect(bx - 4, by - 4, 30, 5);
+          context.strokeStyle = '#3a3a40';
+          context.lineWidth = 2;
+          context.strokeRect(bx - 4, by - 4, 30, 24);
+          context.fillStyle = '#3a3a40';
+          context.fillRect(bx + 8, by + 4, 6, 10);
+        } else if (b.height === 1) {
+          const bx = b.x + b.w - 40;
+          const by = b.y + b.h - 34;
+          context.fillStyle = '#7a7468';
+          context.fillRect(bx, by, 22, 18);
+          context.strokeStyle = '#454138';
+          context.lineWidth = 2;
+          context.strokeRect(bx, by, 22, 18);
+          context.fillStyle = '#454138';
+          context.fillRect(bx + 8, by + 5, 6, 8);
+        }
+      }
+      // A neon sign on the south edge of a few Strip buildings, glowing
+      // after dark: original names only.
+      const rh2 = roofHash(b);
+      if (rh2 % 7 === 0 && b.y + b.h < WORLD.height - 200) {
+        const neon = PALETTE.neon[rh2 % PALETTE.neon.length];
+        const names = ['TACOS', 'NEON', 'BAR', '24H'];
+        const label = names[rh2 % names.length];
+        const nx = b.x + Math.floor(b.w / 2) - 24;
+        const ny = b.y + b.h - 4;
+        if (light.isNight) {
+          context.fillStyle = neon;
+          context.globalAlpha = 0.35;
+          context.fillRect(nx - 6, ny - 6, 60, 22);
+          context.globalAlpha = 1;
+        }
+        context.fillStyle = neon;
+        context.fillRect(nx, ny, 48, 10);
+        text(label, nx + 24, ny + 9, 9, '#141414', 'center');
       }
     }
     for (const t of state.city.trees) {
-      context.fillStyle = PALETTE.treeDark;
-      context.beginPath();
-      context.arc(t.x + 3, t.y + 4, t.r, 0, Math.PI * 2);
-      context.fill();
+      // Trees throw a shadow too — only while the sun is up.
+      if (sh.len > 0) {
+        context.fillStyle = PALETTE.treeDark;
+        context.beginPath();
+        context.arc(t.x + 3 + sh.dx * 0.3, t.y + 4 + sh.dy * 0.3, t.r, 0, Math.PI * 2);
+        context.fill();
+      }
       context.fillStyle = PALETTE.tree;
       context.beginPath();
       context.arc(t.x, t.y, t.r, 0, Math.PI * 2);
@@ -257,6 +336,25 @@ export function createRenderer(canvas) {
     context.fillStyle = 'rgba(30,40,55,0.85)';
     context.fillRect(car.length / 2 - 20, -car.width / 2 + 5, 12, car.width - 10);
     context.fillRect(-car.length / 2 + 6, -car.width / 2 + 5, 10, car.width - 10);
+    if (car.body === 'bus') {
+      // A city bus: a long window strip down the side.
+      context.fillStyle = 'rgba(200, 230, 245, 0.9)';
+      context.fillRect(-car.length / 2 + 10, -car.width / 2 + 5, car.length - 32, 8);
+      context.fillRect(-car.length / 2 + 10, car.width / 2 - 13, car.length - 32, 8);
+    } else if (car.body === 'taxi') {
+      // A taxi: a roof sign, so it reads as a cab from above.
+      context.fillStyle = '#fff8c0';
+      context.fillRect(-8, -6, 16, 12);
+      context.fillStyle = '#222';
+      text('TAXI', 0, 4, 8, '#222', 'center');
+    } else if (car.body === 'truck') {
+      // A box truck: the cargo box is a paler slab behind the cab.
+      context.fillStyle = 'rgba(255,255,255,0.28)';
+      context.fillRect(-car.length / 2 + 4, -car.width / 2 + 4, car.length - 30, car.width - 8);
+      context.strokeStyle = 'rgba(0,0,0,0.35)';
+      context.lineWidth = 2;
+      context.strokeRect(-car.length / 2 + 4, -car.width / 2 + 4, car.length - 30, car.width - 8);
+    }
     // Headlights.
     context.fillStyle = '#fff8c0';
     context.fillRect(car.length / 2 - 2, -car.width / 2 + 4, 3, 6);
@@ -365,6 +463,72 @@ export function createRenderer(canvas) {
       context.lineWidth = 2;
       context.stroke();
     }
+    // Sunport packages: ten hidden glowing parcels around the city.
+    // Collect all ten for a $500 bonus.
+    if (state.sunportPackages) {
+      for (const pk of state.sunportPackages) {
+        if (pk.taken) continue;
+        const bob = Math.sin(time * 3 + pk.x * 0.7) * 3;
+        const glow = 16 + Math.sin(time * 4 + pk.y) * 4;
+        context.fillStyle = 'rgba(255, 210, 63, 0.30)';
+        context.beginPath();
+        context.arc(pk.x, pk.y + bob, glow, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = '#ffd23f';
+        context.beginPath();
+        context.moveTo(pk.x, pk.y - 12 + bob);
+        context.lineTo(pk.x + 10, pk.y + bob);
+        context.lineTo(pk.x, pk.y + 12 + bob);
+        context.lineTo(pk.x - 10, pk.y + bob);
+        context.closePath();
+        context.fill();
+        context.strokeStyle = '#8a6d00';
+        context.lineWidth = 2;
+        context.stroke();
+      }
+    }
+    // The taxi passenger waiting at the stand (hidden while a fare runs).
+    if (state.taxiPassenger && !state.side) {
+      const tp = state.taxiPassenger;
+      context.strokeStyle = '#ffd23f';
+      context.lineWidth = 3;
+      context.beginPath();
+      context.arc(tp.x, tp.y, 22 + Math.sin(time * 3) * 3, 0, Math.PI * 2);
+      context.stroke();
+      drawPedShape({ x: tp.x, y: tp.y, angle: -Math.PI / 2, color: '#ffd23f', armed: false, dead: false });
+      text('TAXI', tp.x, tp.y - 26, 14, '#ffd23f', 'center');
+    }
+    // Storefronts on the sidewalk edge: a striped awning and a painted sign.
+    for (const shop of STOREFRONTS) {
+      context.fillStyle = shop.color;
+      context.fillRect(shop.x - 30, shop.y - 8, 60, 14);
+      context.fillStyle = 'rgba(255,255,255,0.65)';
+      for (let sx = shop.x - 30; sx < shop.x + 30; sx += 12) {
+        context.fillRect(sx, shop.y - 8, 6, 14);
+      }
+      context.fillStyle = '#141414';
+      context.fillRect(shop.x - 34, shop.y - 24, 68, 14);
+      text(shop.name, shop.x, shop.y - 13, 10, '#f4efe2', 'center');
+    }
+    // The food truck by Central Plaza: eat here to get your health back.
+    {
+      const ft = FOOD_TRUCK;
+      context.save();
+      context.translate(ft.x, ft.y);
+      context.fillStyle = 'rgba(0,0,0,0.25)';
+      roundRect(-38, -14, 80, 34, 8);
+      context.fill();
+      context.fillStyle = '#e8e8e8';
+      roundRect(-40, -18, 80, 34, 8);
+      context.fill();
+      context.fillStyle = '#e84c3d';
+      context.fillRect(-40, -18, 80, 12);
+      context.fillStyle = '#2f8f7a';
+      context.fillRect(-40, -6, 80, 6);
+      context.fillStyle = '#141414';
+      text('FOOD', 0, 12, 12, '#141414', 'center');
+      context.restore();
+    }
     // Mission / side-job target: a pulsing ring, or an edge arrow when off-screen.
     if (target) {
       const pulse = 26 + Math.sin(time * 4) * 6;
@@ -437,8 +601,9 @@ export function createRenderer(canvas) {
 
   function drawHelicopter(state, h) {
     const p = state.player;
-    // Long shadow on the ground, thrown by the low sun.
-    context.fillStyle = 'rgba(0,0,0,0.20)';
+    // Long shadow on the ground, thrown by the low sun — gone at night.
+    const heliDark = daylight(state).darkness;
+    context.fillStyle = `rgba(0,0,0,${(0.20 * (1 - heliDark)).toFixed(2)})`;
     context.beginPath();
     context.ellipse(h.x + 26, h.y + 34, 34, 12, 0, 0, Math.PI * 2);
     context.fill();
@@ -490,10 +655,41 @@ export function createRenderer(canvas) {
     }
   }
 
+  /** Traffic lights at the four central intersections, cycling red/yellow/green. */
+  function drawTrafficLights(state) {
+    for (const light of state.city.trafficLights) {
+      const phase = lightPhase(state, light);
+      const px = light.x + ROAD.width / 2 + 10;
+      const py = light.y - ROAD.width / 2 - 10;
+      // The pole.
+      context.fillStyle = '#2a2a2a';
+      context.fillRect(px - 2, py - 6, 4, 26);
+      // The housing with three lamps; the live one is bright.
+      context.fillStyle = '#141414';
+      roundRect(px - 8, py - 26, 16, 26, 4);
+      context.fill();
+      const lamps = [phase.v === 'red' ? '#ff3b30' : '#5a2a28', phase.v === 'yellow' ? '#ffd23f' : '#5a4a28', phase.v === 'green' ? '#58c96b' : '#284a2a'];
+      for (let i = 0; i < 3; i += 1) {
+        context.fillStyle = lamps[i];
+        context.beginPath();
+        context.arc(px, py - 20 + i * 8, 4, 0, Math.PI * 2);
+        context.fill();
+      }
+      // A red light throws a small red pool on the road below it.
+      if (phase.v === 'red') {
+        context.fillStyle = 'rgba(255, 59, 48, 0.18)';
+        context.beginPath();
+        context.arc(light.x, light.y, 26, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+  }
+
   /** Paint the world through the camera. Assumes the caller set the transform. */
   function drawWorld(state) {
     drawGround(state);
     drawBuildings(state);
+    drawTrafficLights(state);
     drawMarkers(state);
     // Skid marks from handbrake turns, fading as they age.
     for (const skid of state.skids) {
@@ -547,10 +743,91 @@ export function createRenderer(canvas) {
     // Helicopters fly above the street, spotlights and all.
     for (const h of state.helis) drawHelicopter(state, h);
     drawParticles(state);
-    // Golden-hour wash over the whole frame.
+    // The day/night wash over the whole frame: warm by day, dark blue at
+    // night. Day and night must read differently at a glance.
     const zoom = state.zoom || 1;
-    context.fillStyle = PALETTE.goldenWash;
-    context.fillRect(state.camera.x, state.camera.y, VIEW.width / zoom, VIEW.height / zoom);
+    const light = daylight(state);
+    const vx0 = state.camera.x;
+    const vy0 = state.camera.y;
+    const vw = VIEW.width / zoom;
+    const vh = VIEW.height / zoom;
+    if (light.tint.alpha > 0.005) {
+      context.fillStyle = light.tint.color + light.tint.alpha.toFixed(2) + ')';
+      context.fillRect(vx0, vy0, vw, vh);
+    }
+    // Night lights, painted over the dark wash so they punch through:
+    // lamp pools at the intersections, headlight cones in front of every
+    // car (the player's are brighter), and a stronger heli spotlight.
+    if (light.isNight) {
+      for (const lx of state.city.lines.vertical) {
+        for (const ly of state.city.lines.horizontal) {
+          context.fillStyle = 'rgba(255, 214, 120, 0.30)';
+          context.beginPath();
+          context.arc(lx + ROAD.width / 2 + 8, ly - ROAD.width / 2 - 8, 58, 0, Math.PI * 2);
+          context.fill();
+        }
+      }
+      for (const car of state.cars) {
+        const bright = car.kind === 'player' ? 0.34 : 0.22;
+        const reach = car.kind === 'player' ? 150 : 100;
+        context.save();
+        context.translate(car.x, car.y);
+        context.rotate(car.angle);
+        context.fillStyle = `rgba(255, 240, 170, ${bright})`;
+        context.beginPath();
+        context.moveTo(car.length / 2, -10);
+        context.lineTo(car.length / 2 + reach, -34);
+        context.lineTo(car.length / 2 + reach, 34);
+        context.lineTo(car.length / 2, 10);
+        context.closePath();
+        context.fill();
+        context.restore();
+      }
+      for (const h of state.helis) {
+        context.fillStyle = 'rgba(255, 240, 170, 0.30)';
+        context.beginPath();
+        context.ellipse(state.player.x, state.player.y, HELI.spotRadius, HELI.spotRadius * 0.7, 0, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    // Rain, drawn in the air above everything: streaks slanting down and
+    // splash rings where they land. Positions are a pure function of time,
+    // so a staged screenshot gets the same rain every time.
+    if (state.weather && state.weather.kind === 'rain') {
+      const intensity = state.weather.intensity || 0.7;
+      const count = Math.floor(150 * intensity);
+      const t = state.time;
+      context.strokeStyle = PALETTE.rainStreak;
+      context.lineWidth = 2;
+      context.beginPath();
+      for (let i = 0; i < count; i += 1) {
+        const hx = (i * 997.3) % 1000;
+        const hy = (i * 613.7) % 1000;
+        const x = vx0 + ((hx + t * 140) % vw);
+        const y = vy0 + ((hy + t * 900) % vh);
+        context.moveTo(x, y);
+        context.lineTo(x - 6, y + 18);
+      }
+      context.stroke();
+      context.strokeStyle = PALETTE.rainSplash;
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let i = 0; i < 36; i += 1) {
+        const hx = (i * 331.7) % 1000;
+        const hy = (i * 771.3) % 1000;
+        const x = vx0 + ((hx + t * 140) % vw);
+        const y = vy0 + ((hy + t * 900) % vh);
+        const r = 3 + ((t * 8 + i) % 5);
+        context.moveTo(x + r, y);
+        context.arc(x, y, r, 0, Math.PI * 2);
+      }
+      context.stroke();
+      // A lightning flash, briefly, while the storm is on.
+      if (state.lightning > 0) {
+        context.fillStyle = `rgba(255, 255, 255, ${(state.lightning * 1.2).toFixed(2)})`;
+        context.fillRect(vx0, vy0, vw, vh);
+      }
+    }
   }
 
   /** Switch the transform to the camera (world space). */

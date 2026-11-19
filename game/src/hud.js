@@ -2,9 +2,10 @@
 // logical screen space (1280x720) after the renderer switches the transform:
 // health and cash top-left, wanted stars top-right, the objective across the
 // top, the clock and district bottom-left, and the minimap bottom-right.
-import { FONT, PALETTE, PLACES, RANKS, VIEW, WORLD } from './config.js';
+import { FONT, FOOD_TRUCK, PALETTE, PLACES, RANKS, STOREFRONTS, VIEW, WORLD } from './config.js';
 import { currentTarget } from './missions.js';
 import { districtAt } from './city.js';
+import { daylight } from './daynight.js';
 import { hasSave } from './save.js';
 
 const fonts = new Map();
@@ -156,20 +157,37 @@ function drawHudPlay(ctx, state) {
       text(ctx, 'Follow the yellow marker', VIEW.width / 2, 66, 15, PALETTE.muted, 'center');
     }
   }
-  // Missions done + rank, under the wanted panel.
-  text(ctx, `MISI ${state.stats.missionsDone}/8  •  RANK ${rankFor(state)}`, VIEW.width - 16, 108, 16, PALETTE.panelEdge, 'right');
+  // Missions done + rank, under the wanted panel — plus Sunport packages.
+  const pkgGot = state.sunportPackages ? state.sunportPackages.filter((pk) => pk.taken).length : 0;
+  const pkgTotal = state.sunportPackages ? state.sunportPackages.length : 0;
+  text(ctx, `MISI ${state.stats.missionsDone}/8  •  RANK ${rankFor(state)}  •  PKG ${pkgGot}/${pkgTotal}`, VIEW.width - 16, 108, 16, PALETTE.panelEdge, 'right');
   // Toast message under the banner.
   if (state.toast && state.toast.timer > 0) {
     ctx.globalAlpha = Math.min(1, state.toast.timer);
     text(ctx, state.toast.text, VIEW.width / 2, 116, 20, PALETTE.marker, 'center');
     ctx.globalAlpha = 1;
   }
-  // Bottom-left: clock, district, speed.
-  text(ctx, `${clockText(state.clockMin)}  •  ${districtAt(p.x, p.y)}`, 24, VIEW.height - 20, 17, PALETTE.text, 'left');
+  // Bottom-left: day/night icon, clock, district, speed. The sun by day,
+  // the moon by night — the corner always says which half of the day it is.
+  const day = daylight(state);
+  text(ctx, `${day.icon} ${clockText(state.clockMin)}  •  ${districtAt(p.x, p.y)}`, 24, VIEW.height - 20, 17, PALETTE.text, 'left');
   if (!p.onFoot && p.car) {
     const kmh = Math.round(Math.abs(p.car.speed) * 0.22);
     text(ctx, `${kmh} km/h`, 24, VIEW.height - 48, 22, PALETTE.text, 'left');
     if (p.car.health < 55) text(ctx, 'CAR DAMAGED', 24, VIEW.height - 74, 16, '#ff6b5e', 'left');
+  }
+  // Prompts: a storefront to buy from, or the food truck to eat at.
+  if (p.onFoot) {
+    for (const shop of STOREFRONTS) {
+      const dx = p.x - shop.x;
+      const dy = p.y - shop.y;
+      if (dx * dx + dy * dy < 70 * 70) {
+        text(ctx, `E — ${shop.name}: $${shop.price} (+${shop.health} health)`, VIEW.width / 2, VIEW.height - 240, 17, PALETTE.panelEdge, 'center');
+      }
+    }
+    if (state.nearFood) {
+      text(ctx, 'Food truck — eating, health coming back…', VIEW.width / 2, VIEW.height - 240, 17, '#7ee081', 'center');
+    }
   }
   if (p.inSafehouse) {
     text(ctx, 'SAFEHOUSE — game saved', VIEW.width / 2, VIEW.height - 190, 20, '#7ee081', 'center');
@@ -200,13 +218,14 @@ function drawTitle(ctx, state) {
   text(ctx, 'New in town, $150 in your pocket, and a call from fixer Mara Voss.', 640, 282, 19, PALETTE.muted, 'center');
   text(ctx, 'Steal cars. Outrun the Sunport PD. Run her jobs. Own the city.', 640, 310, 19, PALETTE.muted, 'center');
   text(ctx, '8 story missions • police helicopters • street races • 3 radio stations', 640, 340, 17, PALETTE.panelEdge, 'center');
+  text(ctx, 'Day & night • rain • taxi fares • hidden packages • food truck', 640, 366, 17, PALETTE.panelEdge, 'center');
   const lines = [
     'WASD / arrows — walk and drive    •    E — enter / exit car',
     'F — punch / shoot (aim with mouse)    •    Space — handbrake',
     'R — radio    •    Shift — run    •    M — bigger map    •    N — mute    •    Esc — pause',
     'Reach your safehouse in Palm Heights to save your game.',
   ];
-  lines.forEach((line, i) => text(ctx, line, 640, 372 + i * 28, 17, PALETTE.text, 'center'));
+  lines.forEach((line, i) => text(ctx, line, 640, 398 + i * 28, 17, PALETTE.text, 'center'));
   text(ctx, 'Press Enter or click to start', 640, 520, 24, PALETTE.panelEdge, 'center');
   if (hasSave()) text(ctx, 'Press C to continue your saved game', 640, 552, 18, PALETTE.cash, 'center');
   if (state.storyDone) text(ctx, 'Story complete — free roam unlocked', 640, 580, 16, PALETTE.cash, 'center');

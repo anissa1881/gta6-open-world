@@ -158,13 +158,16 @@ export function stageShot(name, state) {
     state.clockMin = 22 * 60 + 10;
     state.cash = 1200;
     state.wanted = 2;
-    placePlayerCar(state, 600, 1400, 0, 460);
+    placePlayerCar(state, 1160, 1400, 0, 460);
+    // Mid-jump off the Race Ramp at (1200, 1400): the car flies with its
+    // shadow on the road below — the stunt jump reads in the still frame.
+    state.player.car.air = { t: 0.45, dur: 0.9, h: 42, speed: 460 };
     setMission(state, 5, 'race', 62);
     state.mission.checkpoints = RACE_CHECKPOINTS.map((c) => ({ ...c }));
-    state.mission.collected = 1;
-    state.mission.target = { x: 700, y: 1400, label: 'Checkpoint 2/5' };
+    state.mission.collected = 3;
+    state.mission.target = { x: 1300, y: 1400, label: 'Checkpoint 4/5' };
     state.mission.timerMax = 100;
-    for (const [x, color] of [[820, '#4a90d9'], [1010, '#d94a6a'], [1210, '#7ab648']]) {
+    for (const [x, color] of [[820, '#4a90d9'], [1010, '#d94a6a'], [1420, '#7ab648']]) {
       const rival = createCar('traffic', x, 1400 + (x % 2 === 0 ? -20 : 20), 0, color,
         { driver: 'ai', ai: { axis: 'h', road: 1400, dir: 1, speed: 300 } });
       rival.speed = 300;
@@ -175,7 +178,7 @@ export function stageShot(name, state) {
     addTrafficCar(state, 400, 1800, Math.PI, '#5a5a5a');
     addTrafficCar(state, 900, 1000, 0, '#f2c230', 'taxi');
     addPeds(state, [[750, 1330], [900, 1470], [500, 1330], [700, 1330], [850, 1470], [1000, 1330], [1150, 1470]]);
-    state.toast = { text: 'Mara Voss: "Checkpoint 2/5 — floor it!"', timer: 4 };
+    state.toast = { text: 'Mara Voss: "Checkpoint 4/5 — and take the jump!"', timer: 4 };
     frameCamera(state);
     return { screen: 'play' };
   }
@@ -214,6 +217,10 @@ export function stageShot(name, state) {
   state.weather = { kind: 'rain', intensity: 0.8, timer: 60 };
   state.cash = 480;
   state.wanted = 4;
+  // The arrival warning, staged: the "POLICE INCOMING" banner is the one
+  // thing round 7's shots never showed — in play it only lives 2.5 s.
+  state.warning = { kind: 'police', text: '⚠ POLICE INCOMING', timer: 2.5 };
+  state.lastPoliceWarn = state.time;
   placePlayerCar(state, 1400, 1000, 0, 380);
   // The ram just landed: the player's car keeps its dent and cracked
   // windshield, so the crash reads in the still frame.

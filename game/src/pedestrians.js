@@ -190,6 +190,8 @@ export function damagePed(state, ped, amount, byPlayer) {
 export function checkCarHits(state) {
   const car = state.player.onFoot ? null : state.player.car;
   if (!car || car.health <= 0 || Math.abs(car.speed) < 80) return;
+  // Airborne off a ramp, the car flies over pedestrians — no hit.
+  if (car.air) return;
   for (const ped of state.peds) {
     if (ped.dead || ped.state === 'stumble' || ped.armed) continue;
     if (state.time - (ped.lastHit || -10) < 2) continue;

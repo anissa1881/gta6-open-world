@@ -5,6 +5,7 @@
 import { DISTRICTS, FONT, FOOD_TRUCK, HELI, PALETTE, PLACES, ROAD, STOREFRONTS, VIEW, WORLD } from './config.js';
 import { currentTarget } from './missions.js';
 import { SIDE_SPOTS } from './missions.js';
+import { STUNT_RAMPS } from './stunts.js';
 import { inSafehouse } from './city.js';
 import { daylight, lightPhase } from './daynight.js';
 
@@ -340,9 +341,58 @@ export function createRenderer(canvas) {
     }
   }
 
+  /** Stunt ramps: a yellow chevron wedge on the road, facing the jump. */
+  function drawRamps() {
+    for (const ramp of STUNT_RAMPS) {
+      context.save();
+      context.translate(ramp.x, ramp.y);
+      context.rotate(ramp.angle);
+      context.fillStyle = '#f2c230';
+      context.fillRect(-30, -24, 60, 48);
+      // Black chevrons pointing the way off the lip.
+      context.fillStyle = '#1a1a1a';
+      for (let i = 0; i < 3; i += 1) {
+        const cx = -22 + i * 18;
+        context.beginPath();
+        context.moveTo(cx, -24);
+        context.lineTo(cx + 10, 0);
+        context.lineTo(cx, 24);
+        context.lineTo(cx + 6, 24);
+        context.lineTo(cx + 16, 0);
+        context.lineTo(cx + 6, -24);
+        context.closePath();
+        context.fill();
+      }
+      // The lip: a darker edge the car leaves the ground from.
+      context.fillStyle = '#b98a1d';
+      context.fillRect(24, -24, 6, 48);
+      context.strokeStyle = 'rgba(20,20,20,0.7)';
+      context.lineWidth = 2;
+      context.strokeRect(-30, -24, 60, 48);
+      context.restore();
+      // A small label above the ramp, so it reads as a feature, not a stain.
+      text('JUMP', ramp.x, ramp.y - 34, 13, '#ff9a3c', 'center');
+    }
+  }
+
   function drawCarShape(car) {
+    // An airborne car: its shadow stays on the ground while the body lifts
+    // and grows a little, so the jump reads in a still frame.
+    if (car.air && car.air.h > 1) {
+      context.fillStyle = `rgba(0,0,0,${(0.30 * (1 - car.air.h / 60)).toFixed(2)})`;
+      context.beginPath();
+      context.ellipse(car.x, car.y + 6, car.length / 2, car.width / 2, 0, 0, Math.PI * 2);
+      context.fill();
+    }
     context.save();
-    context.translate(car.x, car.y);
+    if (car.air && car.air.h > 0) {
+      const lift = car.air.h;
+      context.translate(car.x, car.y - lift);
+      const s = 1 + lift * 0.006;
+      context.scale(s, s);
+    } else {
+      context.translate(car.x, car.y);
+    }
     context.rotate(car.angle);
     context.fillStyle = 'rgba(0,0,0,0.25)';
     roundRect(-car.length / 2 + 4, -car.width / 2 + 5, car.length, car.width, 8);
@@ -778,6 +828,7 @@ export function createRenderer(canvas) {
   /** Paint the world through the camera. Assumes the caller set the transform. */
   function drawWorld(state) {
     drawGround(state);
+    drawRamps();
     drawBuildings(state);
     drawTrafficLights(state);
     drawMarkers(state);

@@ -7,6 +7,7 @@ import { currentTarget } from './missions.js';
 import { districtAt } from './city.js';
 import { daylight } from './daynight.js';
 import { hasSave } from './save.js';
+import { STUNT_RAMPS, nearestRamp } from './stunts.js';
 
 const fonts = new Map();
 function text(ctx, value, x, y, size, color, align) {
@@ -73,6 +74,20 @@ function drawMinimap(ctx, state, big) {
   // Safehouse.
   ctx.fillStyle = '#2fae4e';
   ctx.fillRect(x + PLACES.safehouse.x * sx - 3, y + PLACES.safehouse.y * sy - 3, 6, 6);
+  // Stunt ramps as orange triangles, so the jumps are findable on the map.
+  ctx.fillStyle = '#ff9a3c';
+  for (const ramp of STUNT_RAMPS) {
+    ctx.save();
+    ctx.translate(x + ramp.x * sx, y + ramp.y * sy);
+    ctx.rotate(ramp.angle);
+    ctx.beginPath();
+    ctx.moveTo(5, 0);
+    ctx.lineTo(-4, -4);
+    ctx.lineTo(-4, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
   // Traffic as grey dots, police as red dots.
   ctx.fillStyle = 'rgba(200,200,200,0.8)';
   for (const car of state.cars) {
@@ -171,10 +186,11 @@ function drawHudPlay(ctx, state) {
       text(ctx, 'Follow the yellow marker', VIEW.width / 2, 66, 15, PALETTE.muted, 'center');
     }
   }
-  // Missions done + rank, under the wanted panel — plus Sunport packages.
+  // Missions done + rank, under the wanted panel — plus Sunport packages and stunt jumps.
   const pkgGot = state.sunportPackages ? state.sunportPackages.filter((pk) => pk.taken).length : 0;
   const pkgTotal = state.sunportPackages ? state.sunportPackages.length : 0;
-  text(ctx, `MISI ${state.stats.missionsDone}/8  •  RANK ${rankFor(state)}  •  PKG ${pkgGot}/${pkgTotal}`, VIEW.width - 16, 108, 16, PALETTE.panelEdge, 'right');
+  const jumpBit = state.stats.jumps > 0 ? `  •  JUMP ${state.stats.jumps}` : '';
+  text(ctx, `MISI ${state.stats.missionsDone}/8  •  RANK ${rankFor(state)}  •  PKG ${pkgGot}/${pkgTotal}${jumpBit}`, VIEW.width - 16, 108, 16, PALETTE.panelEdge, 'right');
   // Toast message under the banner.
   if (state.toast && state.toast.timer > 0) {
     ctx.globalAlpha = Math.min(1, state.toast.timer);
@@ -231,6 +247,13 @@ function drawHudPlay(ctx, state) {
   if (p.inSafehouse) {
     text(ctx, 'SAFEHOUSE — game saved', VIEW.width / 2, VIEW.height - 190, 20, '#7ee081', 'center');
   }
+  // A stunt ramp ahead: hit it at speed and the car flies.
+  if (!p.onFoot && p.car && !p.car.air) {
+    const near = nearestRamp(p.x, p.y);
+    if (near.dist < 150 && Math.abs(p.car.speed) < 240) {
+      text(ctx, 'Ramp ahead — hit it at speed for a stunt jump!', VIEW.width / 2, VIEW.height - 240, 17, '#ff9a3c', 'center');
+    }
+  }
   // Controls hint, first minute only, on a dark strip so it reads over any ground.
   if (state.time < 45) {
     ctx.fillStyle = 'rgba(20, 26, 34, 0.75)';
@@ -257,7 +280,7 @@ function drawTitle(ctx, state) {
   text(ctx, 'New in town, $150 in your pocket, and a call from fixer Mara Voss.', 640, 282, 19, PALETTE.muted, 'center');
   text(ctx, 'Steal cars. Outrun the Sunport PD. Run her jobs. Own the city.', 640, 310, 19, PALETTE.muted, 'center');
   text(ctx, '8 story missions • police helicopters • street races • 3 radio stations', 640, 340, 17, PALETTE.panelEdge, 'center');
-  text(ctx, 'Day & night • rain • taxi fares • hidden packages • food truck', 640, 366, 17, PALETTE.panelEdge, 'center');
+  text(ctx, 'Day & night • rain • taxi fares • hidden packages • food truck • stunt jumps', 640, 366, 17, PALETTE.panelEdge, 'center');
   const lines = [
     'WASD / arrows — walk and drive    •    E — enter / exit car',
     'F — punch / shoot (aim with mouse)    •    Space — handbrake',

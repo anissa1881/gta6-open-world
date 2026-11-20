@@ -34,6 +34,20 @@ export function createCar(kind, x, y, angle, color, options) {
 export function updatePlayerCar(state, input, dt) {
   const car = state.player.car;
   if (!car) return;
+  if (car.air) {
+    // Airborne off a stunt ramp: keep flying straight, no road friction
+    // and no collisions — the car is above the street. Speed bleeds off
+    // a little; the landing (and the cash) is handled by updateStunts.
+    car.speed -= car.speed * 0.25 * dt;
+    car.x += Math.cos(car.angle) * car.speed * dt;
+    car.y += Math.sin(car.angle) * car.speed * dt;
+    state.player.x = car.x;
+    state.player.y = car.y;
+    state.player.angle = car.angle;
+    state.player.speed = Math.abs(car.speed);
+    state.audio.engine(Math.abs(car.speed) / CAR.maxSpeed);
+    return;
+  }
   const throttle = -input.moveY(); // W is up: moveY is -1, so throttle is +1
   const steer = input.moveX();
   const handbrake = input.handbrake();

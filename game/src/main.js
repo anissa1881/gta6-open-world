@@ -16,6 +16,7 @@ import { createPedestrians, updatePedestrians, checkCarHits } from './pedestrian
 import { updateWanted, updatePolice } from './police.js';
 import { updateHelicopters } from './helicopter.js';
 import { SIDE_SPOTS, startMission, startSideJob, updateMissions, updateSideJobs } from './missions.js';
+import { updateStunts } from './stunts.js';
 import { punch, shootPlayer, updateBullets } from './combat.js';
 import { createAudio } from './audio.js';
 import { createRadio } from './radio.js';
@@ -44,7 +45,8 @@ function createState(seedValue) {
     city: null, time: 0, clockMin: 8 * 60 + 15,
     cash: 150, health: 100, wanted: 0, wantedTimer: 0, heat: 0, shootCrimeTimer: 0,
     storyDone: false, mapBig: false, toast: null, busted: false, wasted: false,
-    stats: { stolen: 0, missionsDone: 0, earned: 0 },
+    stats: { stolen: 0, missionsDone: 0, earned: 0, jumps: 0, stuntCash: 0 },
+    stuntCooldown: 0,
     player: null, cars: [], peds: [], police: [], helis: [], bullets: [], bulletRequests: [],
     particles: [], skids: [], pickups: [], mission: null, side: null,
     camera: { x: 0, y: 0 }, zoom: 1, shake: null,
@@ -406,6 +408,7 @@ function runGame() {
     } else {
       updatePlayerCar(state, input, STEP);
     }
+    updateStunts(state, STEP);
 
     updateTraffic(state, STEP);
     updatePedestrians(state, STEP);
